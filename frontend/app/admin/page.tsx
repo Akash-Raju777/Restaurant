@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getSession, clearSession, apiRequest, UserSession } from '@/lib/api';
+import { useCart } from '@/lib/cart-context';
 import {
   Flame,
   LayoutDashboard,
@@ -31,6 +32,7 @@ import {
 
 export default function AdminPage() {
   const router = useRouter();
+  const { clearCart } = useCart();
   const [session, setSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'menu' | 'offers' | 'customers'>('dashboard');
 
@@ -219,6 +221,7 @@ export default function AdminPage() {
   };
 
   const handleLogout = () => {
+    clearCart();
     clearSession();
     router.push('/');
   };

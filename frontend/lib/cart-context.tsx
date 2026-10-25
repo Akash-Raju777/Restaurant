@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Check, ShoppingBag, ArrowRight } from 'lucide-react';
+import { getSession, UserSession } from '@/lib/api';
 
 export interface CartItem {
   id: number;
@@ -40,6 +41,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [session, setSession] = useState<UserSession | null>(null);
   const [items, setItems] = useState<CartItem[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -47,26 +49,70 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [lastAddedDish, setLastAddedDish] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('ember_cart');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setItems(parsed);
-        if (parsed.length > 0) {
-          setLastAddedDish(parsed[parsed.length - 1].name);
+    const syncSessionAndCart = () => {
+      const currentSession = getSession();
+      setSession(currentSession);
+      if (!currentSession) {
+        setItems([]);
+        setLastAddedDish(null);
+        setIsDrawerOpen(false);
+        try {
+          localStorage.removeItem('ember_cart');
+        } catch {
+          // ignore
+        }
+      } else {
+        try {
+          const stored = localStorage.getItem('ember_cart');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setItems(parsed);
+            if (parsed.length > 0) {
+              setLastAddedDish(parsed[parsed.length - 1].name);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load cart', e);
         }
       }
-    } catch (e) {
-      console.error('Failed to load cart', e);
-    }
-    setIsLoaded(true);
+      setIsLoaded(true);
+    };
+
+    syncSessionAndCart();
+
+    window.addEventListener('ember_auth_change', syncSessionAndCart);
+    window.addEventListener('storage', syncSessionAndCart);
+    return () => {
+      window.removeEventListener('ember_auth_change', syncSessionAndCart);
+      window.removeEventListener('storage', syncSessionAndCart);
+    };
   }, []);
+
+  // When route changes, sync session state and ensure logged-out users have empty cart
+  useEffect(() => {
+    const currentSession = getSession();
+    setSession(currentSession);
+    if (!currentSession) {
+      setItems([]);
+      setLastAddedDish(null);
+      setIsDrawerOpen(false);
+      try {
+        localStorage.removeItem('ember_cart');
+      } catch {
+        // ignore
+      }
+    }
+  }, [pathname]);
 
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem('ember_cart', JSON.stringify(items));
+      if (session) {
+        localStorage.setItem('ember_cart', JSON.stringify(items));
+      } else {
+        localStorage.removeItem('ember_cart');
+      }
     }
-  }, [items, isLoaded]);
+  }, [items, isLoaded, session]);
 
   const showToast = (message: string) => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -140,10 +186,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const clearCart = () => {
     setItems([]);
     setLastAddedDish(null);
+    setIsDrawerOpen(false);
+    try {
+      localStorage.removeItem('ember_cart');
+    } catch {
+      // ignore
+    }
   };
 
   const subtotal = items.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const totalCount = items.reduce((acc, item) => acc + item.quantity, 0);
+
+  // Floating cart bar: strictly only for logged-in users on customer storefront pages (never on login, admin, or checkout)
+  const isExcludedPage = pathname === '/' || pathname.startsWith('/admin') || pathname === '/checkout';
+  const shouldShowFloatingBar = Boolean(session) && totalCount > 0 && !isDrawerOpen && !isExcludedPage;
 
   return (
     <CartContext.Provider
@@ -163,8 +219,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
 
-      {/* Permanent Bottom Cart Bar showing all details when user chooses any product */}
-      {totalCount > 0 && !isDrawerOpen && pathname !== '/checkout' && (
+      {/* Floating Bottom Cart Bar: only shown for authenticated customer sessions */}
+      {shouldShowFloatingBar && (
         <div
           className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[95%] max-w-4xl bg-[#120F0B]/95 border border-[#D9A441]/50 backdrop-blur-xl rounded-2xl p-3 sm:px-5 sm:py-3.5 shadow-[0_15px_45px_rgba(0,0,0,0.92),0_0_20px_rgba(217,164,65,0.22)] flex flex-col sm:flex-row items-center justify-between gap-3 animate-in slide-in-from-bottom-5 duration-300"
           role="region"

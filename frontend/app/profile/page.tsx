@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import Footer from '@/components/footer';
 import { getSession, clearSession, apiRequest, UserSession } from '@/lib/api';
+import { useCart } from '@/lib/cart-context';
 import { User, MapPin, Lock, LogOut, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, ShoppingBag } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { clearCart } = useCart();
   const [session, setSession] = useState<UserSession | null>(null);
 
   // Profile Form
@@ -128,6 +130,7 @@ export default function ProfilePage() {
   };
 
   const handleLogout = () => {
+    clearCart();
     clearSession();
     router.push('/');
   };

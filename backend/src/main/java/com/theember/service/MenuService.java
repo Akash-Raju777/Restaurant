@@ -6,14 +6,17 @@ import com.theember.entity.MenuItem;
 import com.theember.repository.CategoryRepository;
 import com.theember.repository.MenuItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -37,7 +40,33 @@ public class MenuService {
         Sort sort = Sort.by(Sort.Direction.fromString(sortDir.equalsIgnoreCase("desc") ? "DESC" : "ASC"),
                 sortField.equalsIgnoreCase("price") ? "price" : "rating");
         Pageable pageable = PageRequest.of(page, size, sort);
-        return menuItemRepository.filterMenuItems(categoryId, isVeg, (search != null && !search.isBlank()) ? search.trim() : null, onlyAvailable, pageable);
+
+        Specification<MenuItem> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (onlyAvailable) {
+                predicates.add(cb.isTrue(root.get("isAvailable")));
+            }
+
+            if (categoryId != null) {
+                predicates.add(cb.equal(root.get("category").get("id"), categoryId));
+            }
+
+            if (isVeg != null) {
+                predicates.add(cb.equal(root.get("isVeg"), isVeg));
+            }
+
+            if (search != null && !search.isBlank()) {
+                String pattern = "%" + search.trim().toLowerCase() + "%";
+                Predicate nameMatch = cb.like(cb.lower(root.get("name")), pattern);
+                Predicate descMatch = cb.like(cb.lower(root.get("description")), pattern);
+                predicates.add(cb.or(nameMatch, descMatch));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        return menuItemRepository.findAll(spec, pageable);
     }
 
     public MenuItem getDishById(Long id) {

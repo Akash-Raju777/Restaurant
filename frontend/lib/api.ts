@@ -26,13 +26,16 @@ export function setSession(session: UserSession) {
   if (typeof window !== 'undefined') {
     localStorage.setItem('ember_session', JSON.stringify(session));
     document.cookie = `ember_token=${session.token}; path=/; max-age=86400; SameSite=Lax`;
+    window.dispatchEvent(new Event('ember_auth_change'));
   }
 }
 
 export function clearSession() {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('ember_session');
+    localStorage.removeItem('ember_cart');
     document.cookie = 'ember_token=; path=/; max-age=0; SameSite=Lax';
+    window.dispatchEvent(new Event('ember_auth_change'));
   }
 }
 

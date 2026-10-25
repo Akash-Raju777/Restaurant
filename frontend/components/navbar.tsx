@@ -10,17 +10,19 @@ import { Flame, ShoppingBag, User, LogOut, Menu as MenuIcon, X, UtensilsCrossed,
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { totalCount, setIsDrawerOpen } = useCart();
+  const { totalCount, setIsDrawerOpen, clearCart } = useCart();
   const [session, setSessionState] = useState<UserSession | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Read session once on mount only — does not need to re-run on route changes
-  // because the session is stored in localStorage and updated by login/logout actions directly.
+  // Sync session state on mount and whenever auth state changes
   useEffect(() => {
-    setSessionState(getSession());
+    const syncSession = () => setSessionState(getSession());
+    syncSession();
+    window.addEventListener('ember_auth_change', syncSession);
+    return () => window.removeEventListener('ember_auth_change', syncSession);
   }, []);
 
   // Close user dropdown when clicking outside
@@ -51,6 +53,7 @@ export default function Navbar() {
   }, []);
 
   const handleLogout = () => {
+    clearCart();
     clearSession();
     setSessionState(null);
     router.push('/');
