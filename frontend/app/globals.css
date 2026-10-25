@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-dark: #080808;
+    --surface-dark: #111111;
+    --surface-elevated: #181511;
+    --gold-primary: #D9A441;
+    --gold-light: #F3E7C4;
+    --gold-dark: #9E7420;
+    --orange-primary: #FF9F43;
+    --orange-cta: #FF7700;
+    --text-primary: #F6F1E8;
+    --text-secondary: #AAA39A;
+    --border-dark: #26221C;
+    --border-gold: rgba(217, 164, 65, 0.25);
+  }
+
+  body {
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+  }
+
+  /* Custom luxury scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #080808;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a241d;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #D9A441;
+  }
+}
+
+/* Luxury Typography & Gradients */
+.font-serif-luxury {
+  font-family: "Cinzel", "Playfair Display", "Times New Roman", serif;
+  letter-spacing: 0.04em;
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #FFF0D0 0%, #D9A441 50%, #B8860B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-gradient-bg {
+  background: linear-gradient(135deg, #F3E7C4 0%, #D9A441 50%, #9E7420 100%);
+}
+
+.orange-gradient-btn {
+  background: linear-gradient(135deg, #FF9F43 0%, #FF6F00 100%);
+  box-shadow: 0 4px 20px rgba(255, 120, 0, 0.35);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.orange-gradient-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(255, 120, 0, 0.5);
+}
+
+.glass-card {
+  background: rgba(17, 17, 17, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(217, 164, 65, 0.12);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(217, 164, 65, 0.35);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 15px rgba(217, 164, 65, 0.1);
+}
+
+/* Shimmer animation for luxury accents */
+@keyframes emberGlow {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.animate-ember-glow {
+  animation: emberGlow 4s ease-in-out infinite;
+}

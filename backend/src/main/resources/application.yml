@@ -1,0 +1,67 @@
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: the-ember-restaurant
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/postgres}
+    driver-class-name: ${DATABASE_DRIVER:org.postgresql.Driver}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:}
+    hikari:
+      pool-name: EmberHikariCP
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      idle-timeout: 30000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      connection-test-query: SELECT 1
+
+  flyway:
+    enabled: ${FLYWAY_ENABLED:false}
+  jpa:
+    open-in-view: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: ${HIBERNATE_DDL_AUTO:update}
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+ember:
+  app:
+    jwtSecret: ${JWT_SECRET:}
+    jwtExpirationMs: ${JWT_EXPIRATION_MS:86400000} # 24 hours
+    adminEmail: ${EMBER_ADMIN_EMAIL:admin@theember.com}
+    adminPassword: ${EMBER_ADMIN_PASSWORD:}
+    customerEmail: ${EMBER_CUSTOMER_EMAIL:customer@theember.com}
+    customerPassword: ${EMBER_CUSTOMER_PASSWORD:}
+  payment:
+    razorpay:
+      keyId: ${RAZORPAY_KEY_ID:rzp_test_placeholder_key}
+      keySecret: ${RAZORPAY_KEY_SECRET:placeholder_secret}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    root: INFO
+    com.theember: INFO
+    org.hibernate.SQL: WARN

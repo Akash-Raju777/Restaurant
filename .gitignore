@@ -1,0 +1,82 @@
+# ==========================================
+# The Ember - Master .gitignore
+# ==========================================
+
+# 1. Environment & Secret Configuration Files
+# Local secrets must never be committed to Git.
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+*.env
+*.env.*
+# Explicitly allow safe documentation templates
+!.env.example
+!frontend/.env.example
+!backend/.env.example
+
+# 2. Private Keys & Certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+*.crt
+id_rsa
+id_ecdsa
+id_ed25519
+
+# 3. Java & Maven Build Artifacts
+backend/target/
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# 4. Node.js & Next.js Build Artifacts
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+frontend/out/
+build/
+frontend/build/
+dist/
+*.tsbuildinfo
+frontend/*.tsbuildinfo
+next-env.d.ts
+
+# 5. Logs & Temporary Debug Files
+*.log
+*log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+backend/backend-log.txt
+
+# 6. IDEs & Operating System Artifacts
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+.qodo/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 7. Test and Coverage
+coverage/
+frontend/coverage/
+.nyc_output/
