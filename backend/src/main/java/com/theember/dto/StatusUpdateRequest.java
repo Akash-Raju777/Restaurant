@@ -4,7 +4,6 @@ import jakarta.validation.constraints.NotBlank;
 
 public class StatusUpdateRequest {
 
-    @NotBlank(message = "Order status is required")
     private String orderStatus; // PLACED, CONFIRMED, PREPARING, OUT_FOR_DELIVERY, DELIVERED, CANCELLED
 
     private String paymentStatus; // PENDING, PAID, FAILED, REFUNDED

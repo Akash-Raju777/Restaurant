@@ -101,6 +101,10 @@ public class DataInitializer implements CommandLineRunner {
                 address.setIsDefault(true);
                 addressRepository.save(address);
             }
+        } else if (customerPassword != null && !customerPassword.trim().isEmpty()) {
+            demoCustomer.setPasswordHash(passwordEncoder.encode(customerPassword.trim()));
+            userRepository.save(demoCustomer);
+            logger.info("Customer account password updated for email: {}", customerEmail);
         }
 
         // Seed Categories

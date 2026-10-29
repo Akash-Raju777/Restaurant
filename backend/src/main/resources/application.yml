@@ -46,6 +46,8 @@ ember:
     adminPassword: ${EMBER_ADMIN_PASSWORD:}
     customerEmail: ${EMBER_CUSTOMER_EMAIL:customer@theember.com}
     customerPassword: ${EMBER_CUSTOMER_PASSWORD:}
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
   payment:
     razorpay:
       keyId: ${RAZORPAY_KEY_ID:rzp_test_placeholder_key}

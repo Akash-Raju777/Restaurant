@@ -2,13 +2,15 @@ package com.theember.controller;
 
 import com.theember.dto.MenuItemRequest;
 import com.theember.dto.OfferRequest;
+import com.theember.dto.OrderResponse;
+import com.theember.dto.PagedResponse;
 import com.theember.dto.StatusUpdateRequest;
 import com.theember.entity.MenuItem;
 import com.theember.entity.Offer;
-import com.theember.entity.Order;
 import com.theember.entity.User;
 import com.theember.security.UserDetailsImpl;
 import com.theember.service.AdminService;
+import com.theember.service.FileStorageService;
 import com.theember.service.MenuService;
 import com.theember.service.OfferService;
 import com.theember.service.OrderService;
@@ -21,6 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
@@ -41,6 +44,9 @@ public class AdminController {
     @Autowired
     private OrderService orderService;
 
+    @Autowired
+    private FileStorageService fileStorageService;
+
     private Long getAdminId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof UserDetailsImpl) {
@@ -56,6 +62,26 @@ public class AdminController {
     }
 
     // Menu Management (CRUD)
+    @GetMapping("/menu")
+    public ResponseEntity<Page<MenuItem>> getMenuItems(
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size) {
+        return ResponseEntity.ok(menuService.getDishesForAdmin(search, page, size));
+    }
+
+    @PostMapping("/menu/image")
+    public ResponseEntity<?> uploadMenuImage(@RequestParam("file") MultipartFile file) {
+        try {
+            String imageUrl = fileStorageService.storeMenuImage(file);
+            return ResponseEntity.ok(Map.of("imageUrl", imageUrl));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.internalServerError().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
     @PostMapping("/menu")
     public ResponseEntity<MenuItem> createMenuItem(@Valid @RequestBody MenuItemRequest request, HttpServletRequest httpRequest) {
         MenuItem item = menuService.createDish(request);
@@ -111,20 +137,20 @@ public class AdminController {
 
     // Order Management
     @GetMapping("/orders")
-    public ResponseEntity<Page<Order>> getOrders(
+    public ResponseEntity<PagedResponse<OrderResponse>> getOrders(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(orderService.getAllOrdersForAdmin(status, search, page, size));
+        return ResponseEntity.ok(PagedResponse.from(orderService.getAllOrdersForAdmin(status, search, page, size)));
     }
 
     @PatchMapping("/orders/{id}/status")
-    public ResponseEntity<Order> updateOrderStatus(
+    public ResponseEntity<OrderResponse> updateOrderStatus(
             @PathVariable Long id,
             @Valid @RequestBody StatusUpdateRequest request,
             HttpServletRequest httpRequest) {
-        Order order = orderService.updateOrderStatus(id, request);
+        OrderResponse order = orderService.updateOrderStatus(id, request);
         adminService.recordAudit(getAdminId(), "UPDATE_ORDER_STATUS", "Order " + order.getOrderNumber() + " -> " + request.getOrderStatus(), httpRequest.getRemoteAddr());
         return ResponseEntity.ok(order);
     }

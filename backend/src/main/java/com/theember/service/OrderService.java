@@ -2,6 +2,7 @@ package com.theember.service;
 
 import com.theember.dto.OrderCreateRequest;
 import com.theember.dto.OrderItemRequest;
+import com.theember.dto.OrderResponse;
 import com.theember.dto.StatusUpdateRequest;
 import com.theember.entity.*;
 import com.theember.repository.MenuItemRepository;
@@ -10,9 +11,10 @@ import com.theember.repository.OrderRepository;
 import com.theember.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class OrderService {
@@ -43,7 +46,7 @@ public class OrderService {
     private final SecureRandom random = new SecureRandom();
 
     @Transactional
-    public Order createOrder(Long userId, OrderCreateRequest request) {
+    public OrderResponse createOrder(Long userId, OrderCreateRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
@@ -115,63 +118,119 @@ public class OrderService {
 
         order.setItems(orderItems);
 
-        return orderRepository.save(order);
+        // Ensure the order is flushed to the database so that subsequent reads (e.g., admin queries) see the new record immediately
+        Order saved = orderRepository.saveAndFlush(order);
+        return OrderResponse.from(saved);
     }
 
-    public List<Order> getCustomerOrders(Long userId) {
-        return orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getCustomerOrders(Long userId) {
+        return orderRepository.findByUserIdOrderByCreatedAtDesc(userId)
+                .stream()
+                .map(OrderResponse::from)
+                .collect(Collectors.toList());
     }
 
-    public Order getCustomerOrder(String orderNumber, Long userId) {
-        return orderRepository.findByOrderNumberAndUserId(orderNumber, userId)
+    @Transactional(readOnly = true)
+    public OrderResponse getCustomerOrder(String orderNumber, Long userId) {
+        Order order = orderRepository.findByOrderNumberAndUserId(orderNumber, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found or unauthorized"));
+        return OrderResponse.from(order);
     }
 
-    public Page<Order> getAllOrdersForAdmin(String status, String search, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        return orderRepository.filterOrders(status, (search != null && !search.isBlank()) ? search.trim() : null, pageable);
+    @Transactional(readOnly = true)
+    public Page<OrderResponse> getAllOrdersForAdmin(String status, String search, int page, int size) {
+        // Normalize blank parameters to null to allow repository query to return all records when filters are omitted
+        if (status != null && status.isBlank()) {
+            status = null;
+        }
+        if (search != null && search.isBlank()) {
+            search = null;
+        }
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Order> orderPage = orderRepository.filterOrders(
+                status,
+                search != null ? search.trim() : null,
+                pageable);
+
+        // Eagerly resolve items for each order within the transaction to avoid lazy load issues
+        List<OrderResponse> responseDTOs = orderPage.getContent().stream()
+                .map(o -> {
+                    // Access the items collection inside the transaction to force initialization
+                    o.getItems().size();
+                    return OrderResponse.from(o);
+                })
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(responseDTOs, pageable, orderPage.getTotalElements());
     }
 
-    public Order getOrderById(Long id) {
-        return orderRepository.findById(id)
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderById(Long id) {
+        Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found with ID: " + id));
+        // Force-initialize items within transaction
+        order.getItems().size();
+        return OrderResponse.from(order);
     }
 
     @Transactional
-    public Order updateOrderStatus(Long id, StatusUpdateRequest request) {
-        Order order = getOrderById(id);
+    public OrderResponse updateOrderStatus(Long id, StatusUpdateRequest request) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found with ID: " + id));
+
         String currentStatus = order.getOrderStatus();
-        String newStatus = request.getOrderStatus().toUpperCase();
+        String newStatus = (request.getOrderStatus() != null && !request.getOrderStatus().isBlank())
+                ? request.getOrderStatus().trim().toUpperCase()
+                : currentStatus;
 
-        // Enforce valid state transitions
-        if ("DELIVERED".equals(currentStatus) && "CANCELLED".equals(newStatus)) {
-            throw new IllegalStateException("Delivered orders cannot be cancelled.");
-        }
-        if ("CANCELLED".equals(currentStatus) && !"CANCELLED".equals(newStatus)) {
-            throw new IllegalStateException("Cancelled orders cannot be reopened.");
+        // Enforce valid state transitions only if status is changing
+        if (!currentStatus.equals(newStatus)) {
+            if ("DELIVERED".equals(currentStatus) && "CANCELLED".equals(newStatus)) {
+                throw new IllegalStateException("Delivered orders cannot be cancelled.");
+            }
+            if ("CANCELLED".equals(currentStatus) && !"CANCELLED".equals(newStatus)) {
+                throw new IllegalStateException("Cancelled orders cannot be reopened.");
+            }
+            order.setOrderStatus(newStatus);
         }
 
-        order.setOrderStatus(newStatus);
         if (request.getPaymentStatus() != null && !request.getPaymentStatus().isBlank()) {
-            order.setPaymentStatus(request.getPaymentStatus().toUpperCase());
+            String requestedPaymentStatus = request.getPaymentStatus().trim().toUpperCase();
+            boolean isUpi = "ONLINE_UPI".equals(order.getPaymentMethod()) || "UPI".equals(order.getPaymentMethod());
+            boolean hasVerifiedGatewayPayment = order.getPaymentGatewayPaymentId() != null
+                    && !order.getPaymentGatewayPaymentId().isBlank();
+            if ("PAID".equals(requestedPaymentStatus)
+                    && !"PAID".equals(order.getPaymentStatus())
+                    && isUpi
+                    && !hasVerifiedGatewayPayment) {
+                throw new IllegalStateException("UPI payments can only be marked PAID after gateway verification.");
+            }
+            order.setPaymentStatus(requestedPaymentStatus);
         } else if ("DELIVERED".equals(newStatus) && "COD".equals(order.getPaymentMethod())) {
             // Once COD order is delivered, payment is marked collected
             order.setPaymentStatus("PAID");
         }
 
         order.setUpdatedAt(LocalDateTime.now());
-        return orderRepository.save(order);
+        Order saved = orderRepository.save(order);
+        saved.getItems().size(); // force init
+        return OrderResponse.from(saved);
     }
 
     @Transactional
-    public Order cancelCustomerOrder(String orderNumber, Long userId) {
-        Order order = getCustomerOrder(orderNumber, userId);
+    public OrderResponse cancelCustomerOrder(String orderNumber, Long userId) {
+        Order order = orderRepository.findByOrderNumberAndUserId(orderNumber, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found or unauthorized"));
+
         if ("PREPARING".equals(order.getOrderStatus()) || "OUT_FOR_DELIVERY".equals(order.getOrderStatus()) || "DELIVERED".equals(order.getOrderStatus())) {
             throw new IllegalStateException("Order cannot be cancelled once preparation has begun. Please contact restaurant directly.");
         }
 
         order.setOrderStatus("CANCELLED");
         order.setUpdatedAt(LocalDateTime.now());
-        return orderRepository.save(order);
+        Order saved = orderRepository.save(order);
+        saved.getItems().size(); // force init
+        return OrderResponse.from(saved);
     }
 }

@@ -47,7 +47,7 @@
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
+			<version>42.7.4</version>
 		</dependency>
 
 		<!-- In-Memory Fallback Driver for seamless testing/local bootstrap -->

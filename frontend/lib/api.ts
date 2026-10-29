@@ -2,6 +2,14 @@
 // Universal API client for The Ember restaurant platform
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
+const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
+
+export function resolveMediaUrl(url?: string | null): string {
+  if (!url) return '';
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+  if (url.startsWith('/uploads/')) return `${API_ORIGIN}${url}`;
+  return url;
+}
 
 export interface UserSession {
   token: string;
@@ -58,6 +66,25 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error || errorData.message || `Request failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function apiUpload<T>(endpoint: string, file: File, fieldName = 'file'): Promise<T> {
+  const session = getSession();
+  const formData = new FormData();
+  formData.append(fieldName, file);
+
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers: session?.token ? { Authorization: `Bearer ${session.token}` } : undefined,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || errorData.message || `Upload failed with status ${res.status}`);
   }
 
   return res.json();

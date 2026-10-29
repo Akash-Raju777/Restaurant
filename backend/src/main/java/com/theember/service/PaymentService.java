@@ -9,6 +9,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -64,6 +68,13 @@ public class PaymentService {
             return result;
         }
 
+        // Verify the gateway signature before recording any payment as PAID
+        if (!verifySignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+            result.put("success", false);
+            result.put("message", "Payment signature verification failed. Payment not recorded.");
+            return result;
+        }
+
         // Idempotency: avoid double-marking
         if ("PAID".equals(order.getPaymentStatus())) {
             result.put("success", true);
@@ -80,5 +91,28 @@ public class PaymentService {
         result.put("success", true);
         result.put("message", "Payment verified and order confirmed");
         return result;
+    }
+
+    private boolean verifySignature(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
+        if (razorpayOrderId == null || razorpayPaymentId == null || razorpaySignature == null) {
+            return false;
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(keySecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] digest = mac.doFinal((razorpayOrderId + "|" + razorpayPaymentId).getBytes(StandardCharsets.UTF_8));
+
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                hex.append(String.format("%02x", b));
+            }
+
+            return MessageDigest.isEqual(
+                    hex.toString().getBytes(StandardCharsets.UTF_8),
+                    razorpaySignature.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            logger.warn("Unable to verify payment signature", e);
+            return false;
+        }
     }
 }

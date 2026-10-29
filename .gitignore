@@ -55,7 +55,11 @@ dist/
 frontend/*.tsbuildinfo
 next-env.d.ts
 
-# 5. Logs & Temporary Debug Files
+# 5. Uploaded Media
+uploads/
+backend/uploads/
+
+# 6. Logs & Temporary Debug Files
 *.log
 *log.txt
 npm-debug.log*
@@ -65,7 +69,7 @@ pnpm-debug.log*
 lerna-debug.log*
 backend/backend-log.txt
 
-# 6. IDEs & Operating System Artifacts
+# 7. IDEs & Operating System Artifacts
 .vscode/
 .idea/
 *.iml
@@ -76,7 +80,7 @@ backend/backend-log.txt
 Thumbs.db
 Desktop.ini
 
-# 7. Test and Coverage
+# 8. Test and Coverage
 coverage/
 frontend/coverage/
 .nyc_output/

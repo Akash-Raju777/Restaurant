@@ -1,7 +1,7 @@
 package com.theember.controller;
 
 import com.theember.dto.OrderCreateRequest;
-import com.theember.entity.Order;
+import com.theember.dto.OrderResponse;
 import com.theember.security.UserDetailsImpl;
 import com.theember.service.OrderService;
 import jakarta.validation.Valid;
@@ -33,7 +33,7 @@ public class OrderController {
     public ResponseEntity<?> placeOrder(@Valid @RequestBody OrderCreateRequest request) {
         try {
             Long userId = getAuthenticatedUserId();
-            Order order = orderService.createOrder(userId, request);
+            OrderResponse order = orderService.createOrder(userId, request);
             return ResponseEntity.ok(order);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -41,7 +41,7 @@ public class OrderController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Order>> getMyOrders() {
+    public ResponseEntity<List<OrderResponse>> getMyOrders() {
         Long userId = getAuthenticatedUserId();
         return ResponseEntity.ok(orderService.getCustomerOrders(userId));
     }
@@ -50,7 +50,7 @@ public class OrderController {
     public ResponseEntity<?> getOrderDetails(@PathVariable String orderNumber) {
         try {
             Long userId = getAuthenticatedUserId();
-            Order order = orderService.getCustomerOrder(orderNumber, userId);
+            OrderResponse order = orderService.getCustomerOrder(orderNumber, userId);
             return ResponseEntity.ok(order);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
@@ -61,7 +61,7 @@ public class OrderController {
     public ResponseEntity<?> cancelOrder(@PathVariable String orderNumber) {
         try {
             Long userId = getAuthenticatedUserId();
-            Order order = orderService.cancelCustomerOrder(orderNumber, userId);
+            OrderResponse order = orderService.cancelCustomerOrder(orderNumber, userId);
             return ResponseEntity.ok(order);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

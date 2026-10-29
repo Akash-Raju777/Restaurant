@@ -1,7 +1,7 @@
 # THE EMBER - Spring Boot Backend Starter
 # Loads credentials from ../.env (project root) and launches Spring Boot
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  THE EMBER — Starting Spring Boot Backend (Port 8080)   " -ForegroundColor Yellow
+Write-Host "  THE EMBER - Starting Spring Boot Backend (Port 8080)   " -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # ── 1. Set Java JDK ─────────────────────────────────────────────────

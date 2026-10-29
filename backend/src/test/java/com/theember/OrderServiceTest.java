@@ -3,7 +3,8 @@ package com.theember;
 import com.theember.dto.OrderCreateRequest;
 import com.theember.dto.OrderItemRequest;
 import com.theember.entity.MenuItem;
-import com.theember.entity.Order;
+import com.theember.dto.OrderResponse;
+import com.theember.dto.StatusUpdateRequest;
 import com.theember.entity.User;
 import com.theember.repository.MenuItemRepository;
 import com.theember.repository.UserRepository;
@@ -47,14 +48,40 @@ class OrderServiceTest {
         item.setQuantity(2);
         req.setItems(List.of(item));
 
-        Order order = orderService.createOrder(user.getId(), req);
+        OrderResponse response = orderService.createOrder(user.getId(), req);
 
-        assertNotNull(order.getOrderNumber());
-        assertEquals("PLACED", order.getOrderStatus());
-        assertEquals("PENDING", order.getPaymentStatus());
+        assertNotNull(response.getOrderNumber());
+        assertEquals("PLACED", response.getOrderStatus());
+        assertEquals("PENDING", response.getPaymentStatus());
         // 2 * 349.00 = 698.00 (Free delivery over 499)
-        assertEquals(BigDecimal.valueOf(698.00).setScale(2), order.getSubtotal().setScale(2));
-        assertEquals(BigDecimal.valueOf(698.00).setScale(2), order.getTotalAmount().setScale(2));
+        assertEquals(BigDecimal.valueOf(698.00).setScale(2), response.getSubtotal().setScale(2));
+        assertEquals(BigDecimal.valueOf(698.00).setScale(2), response.getTotalAmount().setScale(2));
+    }
+
+    @Test
+    void testUpiOrderCannotBeMarkedPaidWithoutGatewayVerification() {
+        User user = userRepository.findByEmail("customer@theember.com").orElseThrow();
+        MenuItem dish = menuItemRepository.findBySlug("butter-chicken").orElseThrow();
+
+        OrderCreateRequest createRequest = new OrderCreateRequest();
+        createRequest.setCustomerName("Test Customer");
+        createRequest.setCustomerPhone("+91 99999 88888");
+        createRequest.setDeliveryAddress("123 Gourmet Lane, Food City");
+        createRequest.setPaymentMethod("ONLINE_UPI");
+
+        OrderItemRequest item = new OrderItemRequest();
+        item.setMenuItemId(dish.getId());
+        item.setQuantity(1);
+        createRequest.setItems(List.of(item));
+
+        OrderResponse order = orderService.createOrder(user.getId(), createRequest);
+
+        StatusUpdateRequest statusRequest = new StatusUpdateRequest();
+        statusRequest.setPaymentStatus("PAID");
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () ->
+                orderService.updateOrderStatus(order.getId(), statusRequest));
+        assertTrue(exception.getMessage().contains("gateway verification"));
     }
 
     @Test
