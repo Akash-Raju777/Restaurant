@@ -54,6 +54,15 @@ public class Order {
     @Column(columnDefinition = "TEXT")
     private String deliveryNotes;
 
+    @Column(name = "coupon_code", length = 50)
+    private String couponCode;
+
+    @Column(name = "applied_offer_id")
+    private Long appliedOfferId;
+
+    @Column(name = "applied_offer_title", length = 200)
+    private String appliedOfferTitle;
+
     private String paymentGatewayOrderId;
     private String paymentGatewayPaymentId;
 
@@ -106,6 +115,15 @@ public class Order {
 
     public String getDeliveryNotes() { return deliveryNotes; }
     public void setDeliveryNotes(String deliveryNotes) { this.deliveryNotes = deliveryNotes; }
+
+    public String getCouponCode() { return couponCode; }
+    public void setCouponCode(String couponCode) { this.couponCode = couponCode; }
+
+    public Long getAppliedOfferId() { return appliedOfferId; }
+    public void setAppliedOfferId(Long appliedOfferId) { this.appliedOfferId = appliedOfferId; }
+
+    public String getAppliedOfferTitle() { return appliedOfferTitle; }
+    public void setAppliedOfferTitle(String appliedOfferTitle) { this.appliedOfferTitle = appliedOfferTitle; }
 
     public String getPaymentGatewayOrderId() { return paymentGatewayOrderId; }
     public void setPaymentGatewayOrderId(String paymentGatewayOrderId) { this.paymentGatewayOrderId = paymentGatewayOrderId; }

@@ -26,15 +26,22 @@ public class JwtUtils {
     @PostConstruct
     public void validateConfiguration() {
         if (jwtSecret == null || jwtSecret.trim().isEmpty()) {
-            logger.error("CRITICAL SECURITY NOTICE: 'JWT_SECRET' is not configured. JWT signing will be disabled until configured.");
+            logger.error("CRITICAL SECURITY NOTICE: 'JWT_SECRET' is not configured. "
+                    + "All JWT validation will fail. Set JWT_SECRET environment variable.");
         } else {
             try {
                 byte[] decoded = Decoders.BASE64.decode(jwtSecret.trim());
                 if (decoded.length < 32) {
-                    logger.warn("SECURITY WARNING: JWT_SECRET decoded length is {} bytes. For HS256 security, at least 32 bytes (256 bits) is required.", decoded.length);
+                    logger.warn("SECURITY WARNING: JWT_SECRET decoded length is {} bytes. "
+                                    + "For HS256 security, at least 32 bytes (256 bits) is required.",
+                            decoded.length);
+                } else {
+                    logger.info("JWT_SECRET configured successfully (decoded length: {} bytes)",
+                            decoded.length);
                 }
             } catch (Exception e) {
-                logger.error("SECURITY WARNING: JWT_SECRET could not be decoded as Base64: {}", e.getMessage());
+                logger.error("SECURITY WARNING: JWT_SECRET could not be decoded as Base64: {}",
+                        e.getMessage());
             }
         }
     }
@@ -61,28 +68,36 @@ public class JwtUtils {
     }
 
     public String getUserNameFromJwtToken(String token) {
-        return Jwts.parser()
-                .verifyWith(key())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload()
-                .getSubject();
+        try {
+            String subject = Jwts.parser()
+                    .verifyWith(key())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload()
+                    .getSubject();
+            logger.debug("JWT subject extracted: {}", subject);
+            return subject;
+        } catch (Exception e) {
+            logger.error("Failed to extract subject from JWT: {}", e.getMessage());
+            throw e;
+        }
     }
 
     public boolean validateJwtToken(String authToken) {
         try {
             Jwts.parser().verifyWith(key()).build().parseSignedClaims(authToken);
+            logger.debug("JWT validation successful");
             return true;
         } catch (MalformedJwtException e) {
-            logger.error("Invalid JWT token: {}", e.getMessage());
+            logger.error("JWT validation failed - malformed token: {}", e.getMessage());
         } catch (ExpiredJwtException e) {
-            logger.error("JWT token is expired: {}", e.getMessage());
+            logger.error("JWT validation failed - token expired: {}", e.getMessage());
         } catch (UnsupportedJwtException e) {
-            logger.error("JWT token is unsupported: {}", e.getMessage());
+            logger.error("JWT validation failed - unsupported token: {}", e.getMessage());
         } catch (IllegalArgumentException e) {
-            logger.error("JWT claims string is empty: {}", e.getMessage());
+            logger.error("JWT validation failed - empty claims: {}", e.getMessage());
         } catch (IllegalStateException e) {
-            logger.error("JWT verification failed due to missing configuration: {}", e.getMessage());
+            logger.error("JWT validation failed - missing configuration: {}", e.getMessage());
         }
         return false;
     }

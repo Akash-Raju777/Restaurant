@@ -25,10 +25,19 @@ public class CustomerController {
 
     private Long getAuthenticatedUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof UserDetailsImpl) {
-            return ((UserDetailsImpl) auth.getPrincipal()).getId();
+        if (auth == null) {
+            throw new SecurityException("No authentication found in SecurityContext. "
+                    + "Please log in again.");
         }
-        throw new SecurityException("User not authenticated");
+        if (!auth.isAuthenticated()) {
+            throw new SecurityException("Authentication is not verified. Please log in again.");
+        }
+        if (!(auth.getPrincipal() instanceof UserDetailsImpl)) {
+            throw new SecurityException("Unexpected authentication principal: "
+                    + (auth.getPrincipal() == null ? "null" : auth.getPrincipal().getClass().getName())
+                    + ". Expected UserDetailsImpl. Please log in again.");
+        }
+        return ((UserDetailsImpl) auth.getPrincipal()).getId();
     }
 
     @GetMapping("/profile")
@@ -69,6 +78,28 @@ public class CustomerController {
         try {
             customerService.deleteAddress(userId, id);
             return ResponseEntity.ok(Map.of("message", "Address deleted"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @RequestMapping(value = "/addresses/{id}", method = {RequestMethod.PUT, RequestMethod.POST, RequestMethod.PATCH})
+    public ResponseEntity<?> updateAddress(@PathVariable Long id, @RequestBody Address address) {
+        Long userId = getAuthenticatedUserId();
+        try {
+            Address updated = customerService.updateAddress(userId, id, address);
+            return ResponseEntity.ok(updated);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PatchMapping("/addresses/{id}/default")
+    public ResponseEntity<?> setDefaultAddress(@PathVariable Long id) {
+        Long userId = getAuthenticatedUserId();
+        try {
+            Address updated = customerService.setDefaultAddress(userId, id);
+            return ResponseEntity.ok(updated);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

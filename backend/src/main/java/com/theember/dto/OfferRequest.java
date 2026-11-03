@@ -1,10 +1,14 @@
 package com.theember.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OfferRequest {
 
@@ -37,6 +41,15 @@ public class OfferRequest {
     private LocalDateTime expiryDate;
 
     private Boolean isActive = true;
+
+    @Min(value = 1, message = "Usage limit must be at least 1")
+    private Integer usageLimit;
+
+    @Min(value = 1, message = "Per-user limit must be at least 1")
+    private Integer perUserLimit;
+
+    @Valid
+    private List<OfferItemRequest> items = new ArrayList<>();
 
     public OfferRequest() {}
 
@@ -75,4 +88,13 @@ public class OfferRequest {
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public Integer getUsageLimit() { return usageLimit; }
+    public void setUsageLimit(Integer usageLimit) { this.usageLimit = usageLimit; }
+
+    public Integer getPerUserLimit() { return perUserLimit; }
+    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
+
+    public List<OfferItemRequest> getItems() { return items; }
+    public void setItems(List<OfferItemRequest> items) { this.items = items; }
 }

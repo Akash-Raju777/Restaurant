@@ -14,6 +14,7 @@ public class OrderItemResponse {
     private Integer quantity;
     private BigDecimal subtotal;
     private String customizationNotes;
+    private Boolean isFreeItem;
 
     public OrderItemResponse() {}
 
@@ -25,6 +26,7 @@ public class OrderItemResponse {
         dto.setQuantity(item.getQuantity());
         dto.setSubtotal(item.getSubtotal());
         dto.setCustomizationNotes(item.getCustomizationNotes());
+        dto.setIsFreeItem(item.getIsFreeItem());
         return dto;
     }
 
@@ -45,4 +47,7 @@ public class OrderItemResponse {
 
     public String getCustomizationNotes() { return customizationNotes; }
     public void setCustomizationNotes(String customizationNotes) { this.customizationNotes = customizationNotes; }
+
+    public Boolean getIsFreeItem() { return isFreeItem; }
+    public void setIsFreeItem(Boolean isFreeItem) { this.isFreeItem = isFreeItem; }
 }

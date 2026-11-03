@@ -68,4 +68,59 @@ public class CustomerService {
 
         addressRepository.delete(address);
     }
+
+    @Transactional
+    public Address updateAddress(Long userId, Long addressId, Address updatedAddress) {
+        Address existing = addressRepository.findById(addressId)
+                .orElseThrow(() -> new IllegalArgumentException("Address not found"));
+
+        if (!existing.getUser().getId().equals(userId)) {
+            throw new SecurityException("Unauthorized access to this address");
+        }
+
+        existing.setHouseDetails(updatedAddress.getHouseDetails());
+        existing.setStreet(updatedAddress.getStreet());
+        existing.setArea(updatedAddress.getArea());
+        existing.setCity(updatedAddress.getCity());
+        existing.setState(updatedAddress.getState());
+        existing.setPostalCode(updatedAddress.getPostalCode());
+        existing.setDeliveryInstructions(updatedAddress.getDeliveryInstructions());
+        existing.setRecipientName(updatedAddress.getRecipientName());
+        existing.setRecipientPhone(updatedAddress.getRecipientPhone());
+        if (updatedAddress.getAddressType() != null) {
+            existing.setAddressType(updatedAddress.getAddressType());
+        }
+
+        if (Boolean.TRUE.equals(updatedAddress.getIsDefault())) {
+            List<Address> defaults = addressRepository.findByUserIdAndIsDefaultTrue(userId);
+            for (Address a : defaults) {
+                if (!a.getId().equals(addressId)) {
+                    a.setIsDefault(false);
+                    addressRepository.save(a);
+                }
+            }
+            existing.setIsDefault(true);
+        }
+
+        return addressRepository.save(existing);
+    }
+
+    @Transactional
+    public Address setDefaultAddress(Long userId, Long addressId) {
+        Address address = addressRepository.findById(addressId)
+                .orElseThrow(() -> new IllegalArgumentException("Address not found"));
+
+        if (!address.getUser().getId().equals(userId)) {
+            throw new SecurityException("Unauthorized access to this address");
+        }
+
+        List<Address> defaults = addressRepository.findByUserIdAndIsDefaultTrue(userId);
+        for (Address a : defaults) {
+            a.setIsDefault(false);
+            addressRepository.save(a);
+        }
+
+        address.setIsDefault(true);
+        return addressRepository.save(address);
+    }
 }

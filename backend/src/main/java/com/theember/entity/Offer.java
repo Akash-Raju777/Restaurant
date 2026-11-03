@@ -3,6 +3,8 @@ package com.theember.entity;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "offers")
@@ -47,6 +49,19 @@ public class Offer {
 
     private Boolean isActive = true;
 
+    @Column(name = "usage_limit")
+    private Integer usageLimit;
+
+    @Column(name = "per_user_limit")
+    private Integer perUserLimit;
+
+    @Column(name = "times_used")
+    private Integer timesUsed = 0;
+
+    @OneToMany(mappedBy = "offer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OrderBy("id ASC")
+    private List<OfferItem> items = new ArrayList<>();
+
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public Offer() {}
@@ -89,6 +104,18 @@ public class Offer {
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public Integer getUsageLimit() { return usageLimit; }
+    public void setUsageLimit(Integer usageLimit) { this.usageLimit = usageLimit; }
+
+    public Integer getPerUserLimit() { return perUserLimit; }
+    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
+
+    public Integer getTimesUsed() { return timesUsed; }
+    public void setTimesUsed(Integer timesUsed) { this.timesUsed = timesUsed; }
+
+    public List<OfferItem> getItems() { return items; }
+    public void setItems(List<OfferItem> items) { this.items = items; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -5,7 +5,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import Navbar from '@/components/navbar';
 import Footer from '@/components/footer';
-import { apiRequest, getSession } from '@/lib/api';
+import { apiRequest } from '@/lib/api';
+import { CustomerGuard } from '@/components/auth-guard';
 import { ShoppingBag, Clock, CheckCircle2, XCircle, ChevronRight, Eye, RefreshCw, X, AlertTriangle } from 'lucide-react';
 
 export default function OrdersPage() {
@@ -29,6 +30,23 @@ export default function OrdersPage() {
 
   useEffect(() => {
     loadOrders();
+
+    // Refresh orders whenever the page regains focus or becomes visible,
+    // so that orders placed in another tab/window or after navigating away
+    // are always reflected when the customer returns to My Orders.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadOrders();
+      }
+    };
+    const handleFocus = () => loadOrders();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handleCancelOrder = async (orderNumber: string) => {
@@ -92,7 +110,8 @@ export default function OrdersPage() {
     <div className="min-h-screen bg-[#080808] text-[#F6F1E8] flex flex-col">
       <Navbar />
 
-      <main className="flex-1 pt-28 pb-20">
+      <CustomerGuard>
+        <main className="flex-1 pt-28 pb-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -301,6 +320,11 @@ export default function OrdersPage() {
                     <div>
                       <span className="font-semibold text-[#F6F1E8]">{it.itemName}</span>
                       <span className="text-[#888] ml-2">x{it.quantity}</span>
+                      {it.isFreeItem && (
+                        <span className="ml-2 text-[9px] font-bold uppercase text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded">
+                          Free
+                        </span>
+                      )}
                       {it.customizationNotes && (
                         <span className="text-[10px] text-[#D9A441] block">{it.customizationNotes}</span>
                       )}
@@ -340,6 +364,8 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
+      </CustomerGuard>
 
       <Footer />
     </div>

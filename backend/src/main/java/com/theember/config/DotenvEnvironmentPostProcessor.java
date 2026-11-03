@@ -73,8 +73,10 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor,
                         val = val.substring(1, val.length() - 1);
                     }
                 }
-                // Only add if not already overridden by OS environment variable
-                if (!environment.containsProperty(key) || environment.getProperty(key, "").isEmpty()) {
+                // Only add if not overridden by explicit OS environment variable or JVM system property
+                String sysProp = System.getProperty(key);
+                String sysEnv = System.getenv(key);
+                if ((sysProp == null || sysProp.isEmpty()) && (sysEnv == null || sysEnv.isEmpty())) {
                     envMap.put(key, val);
                 }
             }

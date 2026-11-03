@@ -23,6 +23,14 @@ public class FileStorageService {
     private String uploadDir;
 
     public String storeMenuImage(MultipartFile file) {
+        return storeImage(file, "menu");
+    }
+
+    public String storeOfferImage(MultipartFile file) {
+        return storeImage(file, "offers");
+    }
+
+    private String storeImage(MultipartFile file, String folder) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Please choose an image file.");
         }
@@ -45,17 +53,17 @@ public class FileStorageService {
         }
 
         try {
-            Path menuDirectory = Paths.get(uploadDir, "menu").toAbsolutePath().normalize();
-            Files.createDirectories(menuDirectory);
+            Path imageDirectory = Paths.get(uploadDir, folder).toAbsolutePath().normalize();
+            Files.createDirectories(imageDirectory);
 
             String filename = UUID.randomUUID().toString().replace("-", "") + "." + extension;
-            Path target = menuDirectory.resolve(filename).normalize();
-            if (!target.startsWith(menuDirectory)) {
+            Path target = imageDirectory.resolve(filename).normalize();
+            if (!target.startsWith(imageDirectory)) {
                 throw new IllegalArgumentException("Invalid image file name.");
             }
 
             file.transferTo(target.toFile());
-            return "/uploads/menu/" + filename;
+            return "/uploads/" + folder + "/" + filename;
         } catch (IOException exception) {
             throw new IllegalStateException("Unable to store image. Please try again.", exception);
         }

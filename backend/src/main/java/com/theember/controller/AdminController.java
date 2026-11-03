@@ -13,11 +13,16 @@ import com.theember.service.AdminService;
 import com.theember.service.FileStorageService;
 import com.theember.service.MenuService;
 import com.theember.service.OfferService;
+import com.theember.service.OrderExportFile;
 import com.theember.service.OrderService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -25,6 +30,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.Map;
 
 @RestController
@@ -109,40 +115,124 @@ public class AdminController {
     }
 
     // Offer Management
+    @PostMapping("/offers/image")
+    public ResponseEntity<?> uploadOfferImage(@RequestParam("file") MultipartFile file) {
+        try {
+            String imageUrl = fileStorageService.storeOfferImage(file);
+            return ResponseEntity.ok(Map.of("imageUrl", imageUrl));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.internalServerError().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
     @GetMapping("/offers")
     public ResponseEntity<?> getAllOffers() {
         return ResponseEntity.ok(offerService.getAllOffersForAdmin());
     }
 
     @PostMapping("/offers")
-    public ResponseEntity<Offer> createOffer(@Valid @RequestBody OfferRequest request, HttpServletRequest httpRequest) {
-        Offer offer = offerService.createOffer(request);
-        adminService.recordAudit(getAdminId(), "CREATE_OFFER", "Created offer: " + offer.getTitle(), httpRequest.getRemoteAddr());
-        return ResponseEntity.ok(offer);
+    public ResponseEntity<?> createOffer(@Valid @RequestBody OfferRequest request, HttpServletRequest httpRequest) {
+        try {
+            Offer offer = offerService.createOffer(request);
+            adminService.recordAudit(getAdminId(), "CREATE_OFFER", "Created offer: " + offer.getTitle(), httpRequest.getRemoteAddr());
+            return ResponseEntity.ok(offer);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        }
     }
 
     @PutMapping("/offers/{id}")
-    public ResponseEntity<Offer> updateOffer(@PathVariable Long id, @Valid @RequestBody OfferRequest request, HttpServletRequest httpRequest) {
-        Offer offer = offerService.updateOffer(id, request);
-        adminService.recordAudit(getAdminId(), "UPDATE_OFFER", "Updated offer ID: " + id, httpRequest.getRemoteAddr());
-        return ResponseEntity.ok(offer);
+    public ResponseEntity<?> updateOffer(@PathVariable Long id, @Valid @RequestBody OfferRequest request, HttpServletRequest httpRequest) {
+        try {
+            Offer offer = offerService.updateOffer(id, request);
+            adminService.recordAudit(getAdminId(), "UPDATE_OFFER", "Updated offer ID: " + id, httpRequest.getRemoteAddr());
+            return ResponseEntity.ok(offer);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        }
     }
 
     @DeleteMapping("/offers/{id}")
     public ResponseEntity<?> deleteOffer(@PathVariable Long id, HttpServletRequest httpRequest) {
-        offerService.deleteOffer(id);
-        adminService.recordAudit(getAdminId(), "DELETE_OFFER", "Deleted offer ID: " + id, httpRequest.getRemoteAddr());
-        return ResponseEntity.ok(Map.of("message", "Offer deleted successfully"));
+        try {
+            offerService.deleteOffer(id);
+            adminService.recordAudit(getAdminId(), "DELETE_OFFER", "Deleted offer ID: " + id, httpRequest.getRemoteAddr());
+            return ResponseEntity.ok(Map.of("message", "Offer deleted successfully"));
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        }
     }
 
     // Order Management
     @GetMapping("/orders")
-    public ResponseEntity<PagedResponse<OrderResponse>> getOrders(
+    public ResponseEntity<?> getOrders(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String paymentMethod,
+            @RequestParam(required = false) String paymentStatus,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) Integer year,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(PagedResponse.from(orderService.getAllOrdersForAdmin(status, search, page, size)));
+        try {
+            return ResponseEntity.ok(PagedResponse.from(orderService.getAllOrdersForAdmin(
+                    status, search, paymentMethod, paymentStatus,
+                    startDate, endDate, month, year, page, size)));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
+    @GetMapping("/orders/export/all")
+    public ResponseEntity<?> exportAllOrders() {
+        try {
+            return excelResponse(orderService.exportAllOrders());
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.internalServerError().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
+    @GetMapping("/orders/export/date-range")
+    public ResponseEntity<?> exportOrdersByDateRange(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        try {
+            return excelResponse(orderService.exportOrdersByDateRange(startDate, endDate));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.internalServerError().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
+    @GetMapping("/orders/export/month")
+    public ResponseEntity<?> exportOrdersByMonth(
+            @RequestParam Integer month,
+            @RequestParam Integer year) {
+        try {
+            return excelResponse(orderService.exportOrdersByMonth(month, year));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.internalServerError().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
+    private ResponseEntity<byte[]> excelResponse(OrderExportFile file) {
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename(file.filename())
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(file.content());
     }
 
     @PatchMapping("/orders/{id}/status")

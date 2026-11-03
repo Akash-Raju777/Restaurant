@@ -18,6 +18,9 @@ public class OrderResponse {
     private String customerPhone;
     private String deliveryAddress;
     private String deliveryNotes;
+    private String couponCode;
+    private Long appliedOfferId;
+    private String appliedOfferTitle;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
     private BigDecimal deliveryFee;
@@ -41,6 +44,9 @@ public class OrderResponse {
         dto.setCustomerPhone(order.getCustomerPhone());
         dto.setDeliveryAddress(order.getDeliveryAddress());
         dto.setDeliveryNotes(order.getDeliveryNotes());
+        dto.setCouponCode(order.getCouponCode());
+        dto.setAppliedOfferId(order.getAppliedOfferId());
+        dto.setAppliedOfferTitle(order.getAppliedOfferTitle());
         dto.setSubtotal(order.getSubtotal());
         dto.setDiscountAmount(order.getDiscountAmount());
         dto.setDeliveryFee(order.getDeliveryFee());
@@ -79,6 +85,15 @@ public class OrderResponse {
 
     public String getDeliveryNotes() { return deliveryNotes; }
     public void setDeliveryNotes(String deliveryNotes) { this.deliveryNotes = deliveryNotes; }
+
+    public String getCouponCode() { return couponCode; }
+    public void setCouponCode(String couponCode) { this.couponCode = couponCode; }
+
+    public Long getAppliedOfferId() { return appliedOfferId; }
+    public void setAppliedOfferId(Long appliedOfferId) { this.appliedOfferId = appliedOfferId; }
+
+    public String getAppliedOfferTitle() { return appliedOfferTitle; }
+    public void setAppliedOfferTitle(String appliedOfferTitle) { this.appliedOfferTitle = appliedOfferTitle; }
 
     public BigDecimal getSubtotal() { return subtotal; }
     public void setSubtotal(BigDecimal subtotal) { this.subtotal = subtotal; }

@@ -4,13 +4,13 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  THE EMBER - Starting Spring Boot Backend (Port 8080)   " -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-# ── 1. Set Java JDK ─────────────────────────────────────────────────
+# 1. Set Java JDK
 if (Test-Path "C:\Program Files\Java\jdk-26.0.1") {
     $env:JAVA_HOME = "C:\Program Files\Java\jdk-26.0.1"
     $env:PATH = "$env:JAVA_HOME\bin;" + $env:PATH
 }
 
-# ── 2. Add Maven to PATH ─────────────────────────────────────────────
+# 2. Add Maven to PATH
 if (-not (Get-Command mvn -ErrorAction SilentlyContinue)) {
     foreach ($candidate in @("C:\maven\apache-maven-3.9.16\bin", "C:\Users\$env:USERNAME\.maven\apache-maven-3.9.6\bin")) {
         if (Test-Path $candidate) {
@@ -20,7 +20,7 @@ if (-not (Get-Command mvn -ErrorAction SilentlyContinue)) {
     }
 }
 
-# ── 3. Load .env from project root ───────────────────────────────────
+# 3. Load .env from project root
 $envFile = Join-Path $PSScriptRoot ".env"
 if (Test-Path $envFile) {
     $loaded = 0
@@ -42,7 +42,8 @@ if (Test-Path $envFile) {
     Write-Host "       Please create .env from .env.example and set your credentials." -ForegroundColor Yellow
 }
 
-# ── 4. Start Spring Boot ──────────────────────────────────────────────
+# 4. Start Spring Boot
 Set-Location "$PSScriptRoot\backend"
+$env:MAVEN_OPTS = "-Xms128m -Xmx512m -XX:MaxMetaspaceSize=256m"
 Write-Host "[INFO] Starting backend..." -ForegroundColor Green
-mvn spring-boot:run
+mvn spring-boot:run '-Dspring-boot.run.jvmArguments=-Xms128m -Xmx512m'

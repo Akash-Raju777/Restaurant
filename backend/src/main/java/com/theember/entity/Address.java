@@ -38,6 +38,15 @@ public class Address {
     @Column(columnDefinition = "TEXT")
     private String deliveryInstructions;
 
+    @Column(length = 150)
+    private String recipientName;
+
+    @Column(length = 30)
+    private String recipientPhone;
+
+    @Column(length = 20)
+    private String addressType; // HOME, WORK, OTHER
+
     private Boolean isDefault = false;
 
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -70,6 +79,15 @@ public class Address {
 
     public String getDeliveryInstructions() { return deliveryInstructions; }
     public void setDeliveryInstructions(String deliveryInstructions) { this.deliveryInstructions = deliveryInstructions; }
+
+    public String getRecipientName() { return recipientName; }
+    public void setRecipientName(String recipientName) { this.recipientName = recipientName; }
+
+    public String getRecipientPhone() { return recipientPhone; }
+    public void setRecipientPhone(String recipientPhone) { this.recipientPhone = recipientPhone; }
+
+    public String getAddressType() { return addressType; }
+    public void setAddressType(String addressType) { this.addressType = addressType; }
 
     public Boolean getIsDefault() { return isDefault; }
     public void setIsDefault(Boolean isDefault) { this.isDefault = isDefault; }

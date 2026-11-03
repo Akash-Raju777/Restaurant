@@ -2,13 +2,16 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import Footer from '@/components/footer';
-import { apiRequest } from '@/lib/api';
-import { Tag, Sparkles, Clock, Check, ArrowRight, Utensils } from 'lucide-react';
+import { apiRequest, getSession } from '@/lib/api';
+import { useCart } from '@/lib/cart-context';
+import { Tag, Sparkles, Utensils, Gift, ShoppingBag } from 'lucide-react';
 
 export default function OffersPage() {
+  const router = useRouter();
+  const { addItem, showToast } = useCart();
   const [offers, setOffers] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +34,43 @@ export default function OffersPage() {
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  const handleOrderDeal = (offer: any) => {
+    const session = getSession();
+    if (!session) {
+      showToast('Please sign in to order this offer');
+      router.push('/');
+      return;
+    }
+
+    const requiredItems = (offer.items || []).filter((item: any) => !item.isFree && item.menuItem);
+    if (requiredItems.length === 0) {
+      router.push('/menu');
+      return;
+    }
+
+    requiredItems.forEach((item: any) => {
+      addItem(
+        {
+          ...item.menuItem,
+          price: item.menuItem.discountedPrice || item.menuItem.price,
+        },
+        item.quantity || 1,
+        'Medium',
+        '',
+        false
+      );
+    });
+
+    try {
+      if (offer.code) {
+        localStorage.setItem('ember_pending_coupon', offer.code);
+      }
+    } catch {}
+
+    showToast(`${offer.title} added — coupon will apply at checkout`);
+    router.push('/checkout');
   };
 
   return (
@@ -86,7 +126,9 @@ export default function OffersPage() {
                     <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold uppercase tracking-wider text-[#FF9F43]">
                       {offer.discountType === 'PERCENTAGE'
                         ? `${offer.discountValue}% OFF`
-                        : `Save ₹${offer.discountValue}`}
+                        : offer.discountType === 'COMBO'
+                          ? `Combo · Save ₹${offer.discountValue}`
+                          : `Save ₹${offer.discountValue}`}
                     </div>
                   </div>
 
@@ -100,12 +142,42 @@ export default function OffersPage() {
                         {offer.description}
                       </p>
 
-                      {offer.comboItems && (
+                      {offer.items?.length > 0 ? (
+                        <div className="pt-2 text-xs bg-[#16130F] p-2.5 rounded-xl border border-[#221D16] space-y-1.5">
+                          <strong className="block text-[11px] text-[#F6F1E8]">Included in this offer:</strong>
+                          {offer.items
+                            .filter((item: any) => !item.isFree)
+                            .map((item: any) => (
+                              <div key={item.id} className="flex justify-between gap-2 text-[#D9A441]">
+                                <span className="truncate">
+                                  {item.quantity}x {item.menuItem?.name || 'Menu item'}
+                                </span>
+                                <span className="text-[9px] uppercase text-[#888] flex-shrink-0">required</span>
+                              </div>
+                            ))}
+                          {offer.items
+                            .filter((item: any) => item.isFree)
+                            .map((item: any) => (
+                              <div key={`free-${item.id}`} className="flex justify-between gap-2 text-emerald-400">
+                                <span className="flex items-center gap-1 truncate">
+                                  <Gift className="w-3 h-3" />
+                                  {item.quantity}x {item.menuItem?.name || 'Menu item'}
+                                </span>
+                                <span className="text-[9px] uppercase flex-shrink-0">free</span>
+                              </div>
+                            ))}
+                          {offer.minOrderAmount > 0 && (
+                            <p className="text-[10px] text-[#888] pt-1 border-t border-[#221D16]">
+                              Minimum order ₹{offer.minOrderAmount}
+                            </p>
+                          )}
+                        </div>
+                      ) : offer.comboItems ? (
                         <div className="pt-2 text-xs text-[#D9A441] bg-[#16130F] p-2.5 rounded-xl border border-[#221D16]">
                           <strong className="block text-[11px] text-[#F6F1E8] mb-0.5">Includes:</strong>
                           {offer.comboItems}
                         </div>
-                      )}
+                      ) : null}
                     </div>
 
                     <div className="space-y-4 pt-4 border-t border-[#1F1B15]">
@@ -128,13 +200,22 @@ export default function OffersPage() {
                       )}
 
                       {/* Order Now CTA */}
-                      <Link
-                        href="/menu"
+                      <button
+                        onClick={() => handleOrderDeal(offer)}
                         className="w-full py-3 rounded-xl text-xs font-bold text-black uppercase tracking-wider orange-gradient-btn flex items-center justify-center space-x-2"
                       >
-                        <Utensils className="w-3.5 h-3.5" />
-                        <span>Order This Deal</span>
-                      </Link>
+                        {offer.items?.some((item: any) => !item.isFree) ? (
+                          <>
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                            <span>Add Deal to Cart</span>
+                          </>
+                        ) : (
+                          <>
+                            <Utensils className="w-3.5 h-3.5" />
+                            <span>Order This Deal</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>

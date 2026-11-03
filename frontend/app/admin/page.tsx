@@ -1,10 +1,19 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getSession, clearSession, apiRequest, apiUpload, UserSession, resolveMediaUrl } from '@/lib/api';
+import {
+  clearSession,
+  apiRequest,
+  apiUpload,
+  apiDownload,
+  UserSession,
+  resolveMediaUrl,
+} from '@/lib/api';
 import DishImage from '@/components/dish-image';
+import { AdminGuard } from '@/components/auth-guard';
+import { useAuth } from '@/lib/auth-context';
 import { useCart } from '@/lib/cart-context';
 import {
   Flame,
@@ -38,11 +47,65 @@ import {
   Truck,
   Sparkles,
   Filter,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileSpreadsheet,
+  Loader2,
 } from 'lucide-react';
+
+const ADMIN_ORDER_PAGE_SIZE = 10;
+const MONTH_OPTIONS = [
+  { value: 1, label: 'January' },
+  { value: 2, label: 'February' },
+  { value: 3, label: 'March' },
+  { value: 4, label: 'April' },
+  { value: 5, label: 'May' },
+  { value: 6, label: 'June' },
+  { value: 7, label: 'July' },
+  { value: 8, label: 'August' },
+  { value: 9, label: 'September' },
+  { value: 10, label: 'October' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'December' },
+];
+
+function toDateTimeLocal(date: Date) {
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateInputLabel(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatOfferDate(value?: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 export default function AdminPage() {
   const router = useRouter();
   const { clearCart } = useCart();
+  const { adminSession, logoutAdmin } = useAuth();
   const [session, setSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'menu' | 'offers' | 'customers'>('dashboard');
 
@@ -57,6 +120,7 @@ export default function AdminPage() {
 
   // Data Collections
   const [orders, setOrders] = useState<any[]>([]);
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [menuItems, setMenuItems] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [offers, setOffers] = useState<any[]>([]);
@@ -71,6 +135,44 @@ export default function AdminPage() {
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('ALL');
   const [orderPaymentFilter, setOrderPaymentFilter] = useState('ALL');
+  const [orderStartDate, setOrderStartDate] = useState('');
+  const [orderEndDate, setOrderEndDate] = useState('');
+  const [orderMonth, setOrderMonth] = useState('');
+  const [orderYear, setOrderYear] = useState('');
+  const [appliedDateRange, setAppliedDateRange] = useState<{ startDate: string; endDate: string } | null>(null);
+  const [appliedMonth, setAppliedMonth] = useState<{ month: number; year: number } | null>(null);
+  const [calendarYears, setCalendarYears] = useState<number[]>([]);
+  const [dateFilterError, setDateFilterError] = useState('');
+  const [exportError, setExportError] = useState('');
+  const [exportLoading, setExportLoading] = useState<'' | 'all' | 'range' | 'month'>('');
+  const [ordersPage, setOrdersPage] = useState(0);
+  const [ordersTotalElements, setOrdersTotalElements] = useState(0);
+  const [ordersTotalPages, setOrdersTotalPages] = useState(0);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState('');
+  const [orderRefreshKey, setOrderRefreshKey] = useState(0);
+
+  const filteredOrders = useMemo(() => {
+    if (!orders.length) return orders;
+    let result = orders;
+    if (orderSearchTerm.trim()) {
+      const term = orderSearchTerm.toLowerCase();
+      result = result.filter(
+        (order) =>
+          (order.orderNumber || '').toLowerCase().includes(term) ||
+          (order.customerName || '').toLowerCase().includes(term) ||
+          (order.customerPhone || '').toLowerCase().includes(term) ||
+          (order.deliveryAddress || '').toLowerCase().includes(term) ||
+          (order.items || []).some(
+            (it: any) => (it.itemName || '').toLowerCase().includes(term)
+          )
+      );
+    }
+    if (orderStatusFilter !== 'ALL') {
+      result = result.filter((order) => order.orderStatus === orderStatusFilter);
+    }
+    return result;
+  }, [orders, orderSearchTerm, orderStatusFilter]);
   const [paymentStatusChoice, setPaymentStatusChoice] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -87,31 +189,47 @@ export default function AdminPage() {
   const [dishIsAvailable, setDishIsAvailable] = useState(true);
   const [dishSaving, setDishSaving] = useState(false);
 
-  // New Offer Form State
+  // Offer Form State
+  const [editingOfferId, setEditingOfferId] = useState<number | null>(null);
   const [offerTitle, setOfferTitle] = useState('');
   const [offerCode, setOfferCode] = useState('');
   const [offerDiscountType, setOfferDiscountType] = useState('PERCENTAGE');
   const [offerDiscountValue, setOfferDiscountValue] = useState('');
   const [offerMinOrder, setOfferMinOrder] = useState('499');
+  const [offerMaxDiscount, setOfferMaxDiscount] = useState('');
   const [offerDescription, setOfferDescription] = useState('');
+  const [offerStartDate, setOfferStartDate] = useState('');
+  const [offerExpiryDate, setOfferExpiryDate] = useState('');
+  const [offerUsageLimit, setOfferUsageLimit] = useState('');
+  const [offerPerUserLimit, setOfferPerUserLimit] = useState('1');
+  const [offerIsActive, setOfferIsActive] = useState(true);
+  const [offerBannerImageUrl, setOfferBannerImageUrl] = useState('');
+  const [offerBannerPreview, setOfferBannerPreview] = useState('');
+  const [offerBannerFile, setOfferBannerFile] = useState<File | null>(null);
+  const [offerItems, setOfferItems] = useState<
+    Array<{ menuItemId: number; quantity: number; isFree: boolean }>
+  >([]);
+  const [offerSaving, setOfferSaving] = useState(false);
 
-  // Authentication check
+  // Load admin data when an admin session is available (AdminGuard ensures auth)
   useEffect(() => {
-    const s = getSession();
-    if (!s || s.role !== 'ROLE_ADMIN') {
-      router.push('/');
-      return;
-    }
-    setSession(s);
+    if (!adminSession) return;
     loadAllAdminData();
-  }, [router]);
+  }, [adminSession]);
+
+  useEffect(() => {
+    const today = new Date();
+    setCalendarYears(Array.from({ length: 8 }, (_, index) => today.getFullYear() - index));
+    setOrderMonth(String(today.getMonth() + 1));
+    setOrderYear(String(today.getFullYear()));
+  }, []);
 
   const loadAllAdminData = async () => {
     setLoading(true);
     try {
-      const [dashRes, ordersRes, menuRes, catRes, offersRes, custRes] = await Promise.all([
+      const [dashRes, recentRes, menuRes, catRes, offersRes, custRes] = await Promise.all([
         apiRequest<any>('/admin/dashboard').catch(() => ({})),
-        apiRequest<any>('/admin/orders?size=30').catch(() => ({ content: [] })),
+        apiRequest<any>('/admin/orders?size=5').catch(() => ({ content: [] })),
         apiRequest<any>('/admin/menu?size=100').catch(() => ({ content: [] })),
         apiRequest<any[]>('/categories').catch(() => []),
         apiRequest<any[]>('/admin/offers').catch(() => []),
@@ -119,17 +237,78 @@ export default function AdminPage() {
       ]);
 
       setStats(dashRes);
-      setOrders(ordersRes.content || []);
+      setRecentOrders(recentRes.content || []);
       setMenuItems(menuRes.content || []);
       setCategories(catRes || []);
       setOffers(offersRes || []);
       setCustomers(custRes.content || []);
+      setOrderRefreshKey((value) => value + 1);
     } catch (e) {
       console.error('Failed to load admin data', e);
     } finally {
       setLoading(false);
     }
   };
+
+  const fetchAdminOrders = useCallback(async () => {
+    if (!session) return;
+
+    setOrdersLoading(true);
+    setOrdersError('');
+    const params = new URLSearchParams({
+      page: String(ordersPage),
+      size: String(ADMIN_ORDER_PAGE_SIZE),
+    });
+
+    if (orderSearchTerm.trim()) params.set('search', orderSearchTerm.trim());
+    if (orderStatusFilter !== 'ALL') params.set('status', orderStatusFilter);
+
+    if (orderPaymentFilter === 'COD' || orderPaymentFilter === 'ONLINE_UPI') {
+      params.set('paymentMethod', orderPaymentFilter);
+    } else if (['PAID', 'PENDING', 'FAILED'].includes(orderPaymentFilter)) {
+      params.set('paymentStatus', orderPaymentFilter);
+    }
+
+    if (appliedDateRange) {
+      params.set('startDate', appliedDateRange.startDate);
+      params.set('endDate', appliedDateRange.endDate);
+    } else if (appliedMonth) {
+      params.set('month', String(appliedMonth.month));
+      params.set('year', String(appliedMonth.year));
+    }
+
+    try {
+      const response = await apiRequest<any>(`/admin/orders?${params.toString()}`);
+      setOrders(response.content || []);
+      setOrdersTotalElements(response.totalElements || 0);
+      setOrdersTotalPages(response.totalPages || 0);
+    } catch (error: any) {
+      setOrders([]);
+      setOrdersTotalElements(0);
+      setOrdersTotalPages(0);
+      setOrdersError(error.message || 'Could not load orders.');
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, [
+    session,
+    ordersPage,
+    orderSearchTerm,
+    orderStatusFilter,
+    orderPaymentFilter,
+    appliedDateRange,
+    appliedMonth,
+  ]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (activeTab !== 'orders') return;
+    const delay = orderSearchTerm ? 350 : 0;
+    const timer = window.setTimeout(() => {
+      void fetchAdminOrders();
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [fetchAdminOrders, orderRefreshKey, orderSearchTerm, session, activeTab]);
 
   const resetDishForm = () => {
     setEditingDishId(null);
@@ -250,31 +429,142 @@ export default function AdminPage() {
     }
   };
 
-  const handleCreateOffer = async (e: React.FormEvent) => {
+  const resetOfferForm = () => {
+    setEditingOfferId(null);
+    setOfferTitle('');
+    setOfferCode('');
+    setOfferDiscountType('PERCENTAGE');
+    setOfferDiscountValue('');
+    setOfferMinOrder('499');
+    setOfferMaxDiscount('');
+    setOfferDescription('');
+    setOfferStartDate(toDateTimeLocal(new Date()));
+    setOfferExpiryDate(toDateTimeLocal(new Date(Date.now() + 90 * 86400000)));
+    setOfferUsageLimit('');
+    setOfferPerUserLimit('1');
+    setOfferIsActive(true);
+    setOfferBannerImageUrl('');
+    setOfferBannerPreview('');
+    setOfferBannerFile(null);
+    setOfferItems([]);
+    setOfferSaving(false);
+  };
+
+  const openCreateOfferModal = () => {
+    resetOfferForm();
+    setShowAddOfferModal(true);
+  };
+
+  const openEditOfferModal = (offer: any) => {
+    setEditingOfferId(offer.id);
+    setOfferTitle(offer.title || '');
+    setOfferCode(offer.code || '');
+    setOfferDiscountType(offer.discountType || 'PERCENTAGE');
+    setOfferDiscountValue(offer.discountValue != null ? String(offer.discountValue) : '');
+    setOfferMinOrder(offer.minOrderAmount != null ? String(offer.minOrderAmount) : '0');
+    setOfferMaxDiscount(offer.maxDiscountAmount != null ? String(offer.maxDiscountAmount) : '');
+    setOfferDescription(offer.description || '');
+    setOfferStartDate(toDateTimeLocal(offer.startDate ? new Date(offer.startDate) : new Date()));
+    setOfferExpiryDate(
+      toDateTimeLocal(offer.expiryDate ? new Date(offer.expiryDate) : new Date(Date.now() + 90 * 86400000))
+    );
+    setOfferUsageLimit(offer.usageLimit != null ? String(offer.usageLimit) : '');
+    setOfferPerUserLimit(offer.perUserLimit != null ? String(offer.perUserLimit) : '');
+    setOfferIsActive(offer.isActive !== false);
+    setOfferBannerImageUrl(offer.bannerImageUrl || '');
+    setOfferBannerPreview(offer.bannerImageUrl ? resolveMediaUrl(offer.bannerImageUrl) : '');
+    setOfferBannerFile(null);
+    setOfferItems(
+      (offer.items || [])
+        .map((item: any) => ({
+          menuItemId: item.menuItem?.id ?? item.menuItemId,
+          quantity: item.quantity || 1,
+          isFree: Boolean(item.isFree),
+        }))
+        .filter((item: any) => item.menuItemId)
+    );
+    setShowAddOfferModal(true);
+  };
+
+  const handleOfferBannerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Banner image must be 5 MB or smaller.');
+      return;
+    }
+    setOfferBannerFile(file);
+    setOfferBannerPreview(URL.createObjectURL(file));
+  };
+
+  const toggleOfferItem = (menuItemId: number) => {
+    setOfferItems((prev) => {
+      if (prev.some((item) => item.menuItemId === menuItemId)) {
+        return prev.filter((item) => item.menuItemId !== menuItemId);
+      }
+      return [...prev, { menuItemId, quantity: 1, isFree: false }];
+    });
+  };
+
+  const updateOfferItem = (menuItemId: number, patch: Partial<{ quantity: number; isFree: boolean }>) => {
+    setOfferItems((prev) =>
+      prev.map((item) => (item.menuItemId === menuItemId ? { ...item, ...patch } : item))
+    );
+  };
+
+  const handleSaveOffer = async (e: React.FormEvent) => {
     e.preventDefault();
+    setOfferSaving(true);
     try {
-      await apiRequest('/admin/offers', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: offerTitle,
-          code: offerCode.toUpperCase(),
-          discountType: offerDiscountType,
-          discountValue: parseFloat(offerDiscountValue),
-          minOrderAmount: parseFloat(offerMinOrder),
-          description: offerDescription,
-          startDate: new Date().toISOString(),
-          expiryDate: new Date(Date.now() + 90 * 86400000).toISOString(),
-          isActive: true,
-        }),
-      });
+      let bannerImageUrl = offerBannerImageUrl;
+      if (offerBannerFile) {
+        const uploaded = await apiUpload<{ imageUrl: string }>('/admin/offers/image', offerBannerFile);
+        bannerImageUrl = uploaded.imageUrl;
+      }
+
+      const payload = {
+        title: offerTitle.trim(),
+        code: offerCode.trim().toUpperCase() || null,
+        discountType: offerDiscountType,
+        discountValue: parseFloat(offerDiscountValue),
+        minOrderAmount: offerMinOrder ? parseFloat(offerMinOrder) : 0,
+        maxDiscountAmount: offerMaxDiscount ? parseFloat(offerMaxDiscount) : null,
+        description: offerDescription,
+        comboItems: offerItems
+          .filter((item) => !item.isFree)
+          .map((item) => {
+            const dish = menuItems.find((menu) => menu.id === item.menuItemId);
+            return `${item.quantity} x ${dish?.name || 'Menu item'}`;
+          })
+          .join(' + ') || null,
+        bannerImageUrl,
+        startDate: offerStartDate,
+        expiryDate: offerExpiryDate,
+        isActive: offerIsActive,
+        usageLimit: offerUsageLimit ? parseInt(offerUsageLimit, 10) : null,
+        perUserLimit: offerPerUserLimit ? parseInt(offerPerUserLimit, 10) : null,
+        items: offerItems,
+      };
+
+      if (editingOfferId) {
+        await apiRequest(`/admin/offers/${editingOfferId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiRequest('/admin/offers', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
+
       setShowAddOfferModal(false);
-      setOfferTitle('');
-      setOfferCode('');
-      setOfferDiscountValue('');
-      setOfferDescription('');
+      resetOfferForm();
       loadAllAdminData();
     } catch (err: any) {
-      alert(err.message || 'Failed to create offer');
+      alert(err.message || 'Failed to save offer');
+    } finally {
+      setOfferSaving(false);
     }
   };
 
@@ -310,9 +600,150 @@ export default function AdminPage() {
           ...(newPaymentStatus ? { paymentStatus: newPaymentStatus } : {}),
         }));
       }
+      setOrderRefreshKey((value) => value + 1);
       loadAllAdminData();
     } catch (err: any) {
       alert(err.message || 'Could not update order status');
+    }
+  };
+
+  const currentPeriodLabel = appliedDateRange
+    ? `${formatDateInputLabel(appliedDateRange.startDate)} to ${formatDateInputLabel(appliedDateRange.endDate)}`
+    : appliedMonth
+      ? new Date(appliedMonth.year, appliedMonth.month - 1, 1).toLocaleDateString('en-IN', {
+          month: 'long',
+          year: 'numeric',
+        })
+      : '';
+
+  const applyDateRange = (startDate: string, endDate: string) => {
+    const normalizedEnd = endDate || startDate;
+    if (!startDate || !normalizedEnd) {
+      setDateFilterError('Select both a start and end date.');
+      return;
+    }
+    if (normalizedEnd < startDate) {
+      setDateFilterError('End date must be on or after the start date.');
+      return;
+    }
+
+    setOrderStartDate(startDate);
+    setOrderEndDate(normalizedEnd);
+    setAppliedDateRange({ startDate, endDate: normalizedEnd });
+    setAppliedMonth(null);
+    setOrdersPage(0);
+    setDateFilterError('');
+    setExportError('');
+  };
+
+  const handleApplyDateRange = () => {
+    applyDateRange(orderStartDate, orderEndDate);
+  };
+
+  const handleQuickRange = (range: 'today' | 'week' | 'month') => {
+    const today = new Date();
+    const start = new Date(today);
+
+    if (range === 'week') {
+      const day = start.getDay();
+      start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+    } else if (range === 'month') {
+      start.setDate(1);
+    }
+
+    applyDateRange(toDateInputValue(start), toDateInputValue(today));
+  };
+
+  const handleApplyMonth = () => {
+    const month = Number(orderMonth);
+    const year = Number(orderYear);
+    if (!month || !year) {
+      setDateFilterError('Select a month and year.');
+      return;
+    }
+
+    setAppliedMonth({ month, year });
+    setAppliedDateRange(null);
+    setOrdersPage(0);
+    setDateFilterError('');
+    setExportError('');
+  };
+
+  const clearPeriodFilter = () => {
+    setOrderStartDate('');
+    setOrderEndDate('');
+    setAppliedDateRange(null);
+    setAppliedMonth(null);
+    setDateFilterError('');
+    setExportError('');
+    setOrdersPage(0);
+  };
+
+  const resetOrderFilters = () => {
+    setOrderSearchTerm('');
+    setOrderStatusFilter('ALL');
+    setOrderPaymentFilter('ALL');
+    setOrderStartDate('');
+    setOrderEndDate('');
+    setAppliedDateRange(null);
+    setAppliedMonth(null);
+    setDateFilterError('');
+    setExportError('');
+    setOrdersPage(0);
+  };
+
+  const goToOrdersPage = (nextPage: number) => {
+    setOrdersPage(Math.max(0, nextPage));
+    window.setTimeout(() => {
+      document.getElementById('admin-orders-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  const handleExportOrders = async (mode: 'all' | 'range' | 'month') => {
+    if (mode === 'range' && !appliedDateRange) {
+      setExportError('Apply a date range before exporting.');
+      return;
+    }
+    if (mode === 'month' && !appliedMonth) {
+      setExportError('Apply a month before exporting.');
+      return;
+    }
+
+    setExportLoading(mode);
+    setExportError('');
+    try {
+      let endpoint = '/admin/orders/export/all';
+      let fallbackFilename = 'TheEmber_All_Orders.xlsx';
+
+      if (mode === 'range' && appliedDateRange) {
+        const params = new URLSearchParams({
+          startDate: appliedDateRange.startDate,
+          endDate: appliedDateRange.endDate,
+        });
+        endpoint = `/admin/orders/export/date-range?${params.toString()}`;
+        fallbackFilename = `TheEmber_Orders_${appliedDateRange.startDate}_to_${appliedDateRange.endDate}.xlsx`;
+      } else if (mode === 'month' && appliedMonth) {
+        const params = new URLSearchParams({
+          month: String(appliedMonth.month),
+          year: String(appliedMonth.year),
+        });
+        endpoint = `/admin/orders/export/month?${params.toString()}`;
+        fallbackFilename = `TheEmber_Orders_${appliedMonth.month}_${appliedMonth.year}.xlsx`;
+      }
+
+      const { blob, filename } = await apiDownload(endpoint, fallbackFilename);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error: any) {
+      setExportError(error.message || 'Could not generate the Excel report.');
+    } finally {
+      setExportLoading('');
     }
   };
 
@@ -435,31 +866,6 @@ export default function AdminPage() {
     }
   };
 
-  const filteredOrders = orders.filter((order) => {
-    if (orderSearchTerm.trim()) {
-      const term = orderSearchTerm.toLowerCase();
-      const matchNum = order.orderNumber?.toLowerCase().includes(term);
-      const matchCust = order.customerName?.toLowerCase().includes(term);
-      const matchPhone = order.customerPhone?.toLowerCase().includes(term);
-      const matchItem = order.items?.some((it: any) => it.itemName?.toLowerCase().includes(term));
-      if (!matchNum && !matchCust && !matchPhone && !matchItem) return false;
-    }
-
-    if (orderStatusFilter !== 'ALL' && order.orderStatus !== orderStatusFilter) {
-      return false;
-    }
-
-    if (orderPaymentFilter !== 'ALL') {
-      if (orderPaymentFilter === 'COD' && order.paymentMethod !== 'COD') return false;
-      if (orderPaymentFilter === 'ONLINE_UPI' && order.paymentMethod !== 'ONLINE_UPI') return false;
-      if (orderPaymentFilter === 'PAID' && order.paymentStatus !== 'PAID') return false;
-      if (orderPaymentFilter === 'PENDING' && order.paymentStatus !== 'PENDING') return false;
-      if (orderPaymentFilter === 'FAILED' && order.paymentStatus !== 'FAILED') return false;
-    }
-
-    return true;
-  });
-
   const handleToggleCustomer = async (id: number, currentActive: boolean) => {
     try {
       await apiRequest(`/admin/customers/${id}/status?isActive=${!currentActive}`, {
@@ -473,13 +879,14 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     clearCart();
-    clearSession();
+    logoutAdmin();
     router.push('/');
   };
 
   return (
     <div className="min-h-screen bg-[#080808] text-[#F6F1E8] flex">
-      {/* SIDEBAR matching reference image */}
+      <AdminGuard>
+        {/* SIDEBAR matching reference image */}
       <aside className="w-64 bg-[#0E0C09] border-r border-[#221D16] flex flex-col justify-between hidden md:flex">
         <div className="p-6 space-y-8">
           {/* Brand */}
@@ -499,7 +906,7 @@ export default function AdminPage() {
           <nav className="space-y-1.5">
             {[
               { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-              { id: 'orders', label: 'Orders', icon: ShoppingBag, badge: orders.length },
+              { id: 'orders', label: 'Orders', icon: ShoppingBag, badge: stats.totalOrders || 0 },
               { id: 'menu', label: 'Menu Management', icon: UtensilsCrossed },
               { id: 'offers', label: 'Offers & Coupons', icon: Tag },
               { id: 'customers', label: 'Customers', icon: Users },
@@ -597,7 +1004,7 @@ export default function AdminPage() {
                     <span className="text-emerald-400 font-semibold">+18% this month</span>
                   </div>
                   <div className="font-serif-luxury text-3xl font-bold text-[#F6F1E8]">
-                    {stats.totalOrders || orders.length}
+                    {stats.totalOrders || recentOrders.length || 0}
                   </div>
                   <span className="text-[11px] text-[#666]">Real database orders recorded</span>
                 </div>
@@ -693,7 +1100,7 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#1A1712]">
-                      {orders.slice(0, 5).map((order) => (
+                      {recentOrders.slice(0, 5).map((order) => (
                         <tr key={order.id} className="hover:bg-[#16130F] transition-colors">
                           <td className="py-3 font-mono font-bold text-[#D9A441]">
                             #{order.orderNumber}
@@ -752,17 +1159,231 @@ export default function AdminPage() {
                 </div>
                 <div className="flex items-center space-x-3">
                   <span className="text-xs text-[#AAA39A] bg-[#16130F] px-3 py-1.5 rounded-xl border border-[#262018]">
-                    Showing <strong className="text-[#D9A441]">{filteredOrders.length}</strong> of {orders.length} orders
+                    Showing <strong className="text-[#D9A441]">{filteredOrders.length}</strong> of {ordersTotalElements} matching orders
                   </span>
                   <button
-                    onClick={loadAllAdminData}
-                    className="p-2 text-[#AAA39A] hover:text-[#F6F1E8] bg-[#16130F] border border-[#262018] hover:border-[#D9A441] rounded-xl transition-all"
+                    onClick={() => setOrderRefreshKey((value) => value + 1)}
+                    className="p-2 text-[#AAA39A] hover:text-[#F6F1E8] bg-[#16130F] border border-[#262018] hover:border-[#D9A441] rounded-xl transition-all disabled:opacity-50"
                     title="Refresh Orders"
+                    disabled={ordersLoading}
                   >
-                    <RefreshCw className="w-4 h-4" />
+                    <RefreshCw className={`w-4 h-4 ${ordersLoading ? 'animate-spin' : ''}`} />
                   </button>
                 </div>
               </div>
+
+              {/* Date, Month & Excel Report Controls */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+                <div className="xl:col-span-5 bg-[#111111] border border-[#221D16] p-4 sm:p-5 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2">
+                      <CalendarDays className="w-4 h-4 text-[#D9A441]" />
+                      <h3 className="text-xs font-bold text-[#F6F1E8] uppercase tracking-wider">Date Range</h3>
+                    </div>
+                    {appliedDateRange && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
+                        Applied
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <label className="space-y-1">
+                      <span className="block text-[10px] uppercase tracking-wider text-[#777] font-semibold">From</span>
+                      <input
+                        type="date"
+                        value={orderStartDate}
+                        max={orderEndDate || undefined}
+                        onChange={(event) => {
+                          setOrderStartDate(event.target.value);
+                          setDateFilterError('');
+                        }}
+                        className="w-full bg-[#16130F] border border-[#262018] focus:border-[#D9A441] rounded-xl px-3 py-2 text-xs text-[#F6F1E8] outline-none transition-all [color-scheme:dark]"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[10px] uppercase tracking-wider text-[#777] font-semibold">To</span>
+                      <input
+                        type="date"
+                        value={orderEndDate}
+                        min={orderStartDate || undefined}
+                        onChange={(event) => {
+                          setOrderEndDate(event.target.value);
+                          setDateFilterError('');
+                        }}
+                        className="w-full bg-[#16130F] border border-[#262018] focus:border-[#D9A441] rounded-xl px-3 py-2 text-xs text-[#F6F1E8] outline-none transition-all [color-scheme:dark]"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      { id: 'today' as const, label: 'Today' },
+                      { id: 'week' as const, label: 'This Week' },
+                      { id: 'month' as const, label: 'This Month' },
+                    ].map((range) => (
+                      <button
+                        key={range.id}
+                        onClick={() => handleQuickRange(range.id)}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-[#181511] text-[#AAA39A] border border-[#28221A] hover:text-[#D9A441] hover:border-[#D9A441]/50 transition-all"
+                      >
+                        {range.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                    <div className="min-h-[16px]">
+                      {dateFilterError && (
+                        <span className="text-[11px] text-rose-300 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {dateFilterError}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <button
+                        onClick={handleApplyDateRange}
+                        className="px-3 py-2 rounded-xl text-[11px] font-bold text-black orange-gradient-btn"
+                      >
+                        Apply Date Range
+                      </button>
+                      {(orderStartDate || orderEndDate || appliedDateRange) && (
+                        <button
+                          onClick={clearPeriodFilter}
+                          className="px-3 py-2 rounded-xl text-[11px] font-semibold bg-[#181511] text-[#888] border border-[#28221A] hover:text-[#CCC] transition-all"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="xl:col-span-3 bg-[#111111] border border-[#221D16] p-4 sm:p-5 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2">
+                      <CalendarDays className="w-4 h-4 text-[#FF9F43]" />
+                      <h3 className="text-xs font-bold text-[#F6F1E8] uppercase tracking-wider">Month</h3>
+                    </div>
+                    {appliedMonth && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
+                        Applied
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <label className="space-y-1">
+                      <span className="block text-[10px] uppercase tracking-wider text-[#777] font-semibold">Month</span>
+                      <select
+                        value={orderMonth}
+                        onChange={(event) => setOrderMonth(event.target.value)}
+                        className="w-full bg-[#16130F] border border-[#262018] focus:border-[#D9A441] rounded-xl px-3 py-2 text-xs text-[#F6F1E8] outline-none transition-all"
+                      >
+                        {MONTH_OPTIONS.map((month) => (
+                          <option key={month.value} value={month.value}>
+                            {month.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[10px] uppercase tracking-wider text-[#777] font-semibold">Year</span>
+                      <select
+                        value={orderYear}
+                        onChange={(event) => setOrderYear(event.target.value)}
+                        className="w-full bg-[#16130F] border border-[#262018] focus:border-[#D9A441] rounded-xl px-3 py-2 text-xs text-[#F6F1E8] outline-none transition-all"
+                      >
+                        {calendarYears.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <button
+                    onClick={handleApplyMonth}
+                    className="w-full px-3 py-2 rounded-xl text-[11px] font-bold text-black bg-[#D9A441] hover:bg-[#FF9F43] transition-all"
+                  >
+                    Apply Month
+                  </button>
+                </div>
+
+                <div className="xl:col-span-4 bg-[#111111] border border-[#221D16] p-4 sm:p-5 rounded-2xl space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-xs font-bold text-[#F6F1E8] uppercase tracking-wider">Excel Reports</h3>
+                  </div>
+                  <p className="text-[11px] text-[#777] leading-relaxed">
+                    Download styled .xlsx reports with order details, item breakdowns, payment data, and summary totals.
+                  </p>
+
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => handleExportOrders('all')}
+                      disabled={Boolean(exportLoading)}
+                      className="w-full px-3 py-2 rounded-xl text-[11px] font-bold bg-[#181511] text-[#D9A441] border border-[#3A2A1A] hover:border-[#D9A441] transition-all flex items-center justify-between gap-2 disabled:opacity-50"
+                    >
+                      <span className="flex items-center gap-2">
+                        {exportLoading === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        Export All Orders
+                      </span>
+                      <span className="text-[10px] text-[#777]">All time</span>
+                    </button>
+                    <button
+                      onClick={() => handleExportOrders('range')}
+                      disabled={Boolean(exportLoading) || !appliedDateRange}
+                      title={!appliedDateRange ? 'Apply a date range first' : 'Export applied date range'}
+                      className="w-full px-3 py-2 rounded-xl text-[11px] font-bold bg-[#181511] text-[#AAA39A] border border-[#28221A] hover:border-[#D9A441] hover:text-[#D9A441] transition-all flex items-center justify-between gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span className="flex items-center gap-2">
+                        {exportLoading === 'range' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        Export Date Range
+                      </span>
+                      <span className="text-[10px] text-[#777]">Applied range</span>
+                    </button>
+                    <button
+                      onClick={() => handleExportOrders('month')}
+                      disabled={Boolean(exportLoading) || !appliedMonth}
+                      title={!appliedMonth ? 'Apply a month first' : 'Export applied month'}
+                      className="w-full px-3 py-2 rounded-xl text-[11px] font-bold bg-[#181511] text-[#AAA39A] border border-[#28221A] hover:border-[#D9A441] hover:text-[#D9A441] transition-all flex items-center justify-between gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span className="flex items-center gap-2">
+                        {exportLoading === 'month' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        Export Month
+                      </span>
+                      <span className="text-[10px] text-[#777]">Applied month</span>
+                    </button>
+                  </div>
+
+                  {exportError && (
+                    <div className="text-[11px] text-rose-300 flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                      <span>{exportError}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(appliedDateRange || appliedMonth) && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#12100C] border border-[#D9A441]/30 rounded-2xl px-4 py-3">
+                  <div className="flex items-center space-x-2 text-xs text-[#AAA39A]">
+                    <CalendarDays className="w-4 h-4 text-[#D9A441]" />
+                    <span>
+                      Showing orders for <strong className="text-[#F6F1E8]">{currentPeriodLabel}</strong>
+                    </span>
+                  </div>
+                  <button
+                    onClick={clearPeriodFilter}
+                    className="text-[11px] font-semibold text-[#D9A441] hover:text-[#FF9F43] transition-colors"
+                  >
+                    Clear period filter
+                  </button>
+                </div>
+              )}
 
               {/* Filters & Search Toolbar */}
               <div className="bg-[#111111] border border-[#221D16] p-4 rounded-2xl space-y-3.5">
@@ -772,7 +1393,10 @@ export default function AdminPage() {
                   <input
                     type="text"
                     value={orderSearchTerm}
-                    onChange={(e) => setOrderSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      setOrderSearchTerm(e.target.value);
+                      setOrdersPage(0);
+                    }}
                     placeholder="Search by Order # (e.g. ORD10674), customer name, phone, or food dish..."
                     className="w-full bg-[#16130F] border border-[#262018] focus:border-[#D9A441] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[#F6F1E8] placeholder-[#666] outline-none transition-all"
                   />
@@ -795,7 +1419,10 @@ export default function AdminPage() {
                   {['ALL', 'PLACED', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'].map((st) => (
                     <button
                       key={st}
-                      onClick={() => setOrderStatusFilter(st)}
+                      onClick={() => {
+                        setOrderStatusFilter(st);
+                        setOrdersPage(0);
+                      }}
                       className={`px-3 py-1 rounded-xl text-[11px] font-bold uppercase transition-all ${
                         orderStatusFilter === st
                           ? 'bg-[#D9A441] text-black shadow-sm'
@@ -821,7 +1448,10 @@ export default function AdminPage() {
                   ].map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => setOrderPaymentFilter(p.id)}
+                      onClick={() => {
+                        setOrderPaymentFilter(p.id);
+                        setOrdersPage(0);
+                      }}
                       className={`px-3 py-1 rounded-xl text-[11px] font-bold uppercase transition-all ${
                         orderPaymentFilter === p.id
                           ? 'bg-[#FF9F43] text-black shadow-sm'
@@ -835,35 +1465,50 @@ export default function AdminPage() {
               </div>
 
               {/* Orders List / Cards */}
-              {loading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-40 rounded-3xl bg-[#111111] border border-[#221D16] animate-pulse" />
-                  ))}
-                </div>
-              ) : filteredOrders.length === 0 ? (
-                <div className="text-center py-20 bg-[#111111] border border-[#221D16] rounded-3xl space-y-4">
-                  <div className="w-14 h-14 rounded-full bg-[#181511] border border-[#262018] flex items-center justify-center mx-auto text-[#D9A441]">
-                    <ShoppingBag className="w-6 h-6" />
+              <div id="admin-orders-list" className="scroll-mt-6">
+                {ordersLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-40 rounded-3xl bg-[#111111] border border-[#221D16] animate-pulse" />
+                    ))}
                   </div>
-                  <h3 className="font-serif-luxury text-xl font-bold text-[#F6F1E8]">No Matching Orders</h3>
-                  <p className="text-xs text-[#AAA39A] max-w-sm mx-auto">
-                    No orders match your active filter criteria. Try resetting the search or filter pills.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setOrderSearchTerm('');
-                      setOrderStatusFilter('ALL');
-                      setOrderPaymentFilter('ALL');
-                    }}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1C1812] border border-[#D9A441]/50 text-[#D9A441] hover:bg-[#D9A441] hover:text-black transition-all"
-                  >
-                    Reset Filters
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredOrders.map((order) => {
+                ) : ordersError ? (
+                  <div className="text-center py-16 bg-[#111111] border border-rose-900/60 rounded-3xl space-y-4">
+                    <div className="w-14 h-14 rounded-full bg-rose-950/60 border border-rose-800 flex items-center justify-center mx-auto text-rose-300">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-serif-luxury text-xl font-bold text-[#F6F1E8]">Could Not Load Orders</h3>
+                    <p className="text-xs text-[#AAA39A] max-w-md mx-auto">{ordersError}</p>
+                    <button
+                      onClick={() => setOrderRefreshKey((value) => value + 1)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1C1812] border border-[#D9A441]/50 text-[#D9A441] hover:bg-[#D9A441] hover:text-black transition-all"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : filteredOrders.length === 0 ? (
+                  <div className="text-center py-20 bg-[#111111] border border-[#221D16] rounded-3xl space-y-4">
+                    <div className="w-14 h-14 rounded-full bg-[#181511] border border-[#262018] flex items-center justify-center mx-auto text-[#D9A441]">
+                      <ShoppingBag className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-serif-luxury text-xl font-bold text-[#F6F1E8]">
+                      {currentPeriodLabel ? 'No Orders in This Period' : 'No Matching Orders'}
+                    </h3>
+                    <p className="text-xs text-[#AAA39A] max-w-sm mx-auto">
+                      {currentPeriodLabel
+                        ? `No orders were placed for ${currentPeriodLabel}. Try another period or clear the filters.`
+                        : 'No orders match your active filter criteria. Try resetting the search or filter pills.'}
+                    </p>
+                    <button
+                      onClick={resetOrderFilters}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1C1812] border border-[#D9A441]/50 text-[#D9A441] hover:bg-[#D9A441] hover:text-black transition-all"
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredOrders.map((order) => {
                     const formattedDate = order.createdAt
                       ? new Date(order.createdAt).toLocaleDateString('en-IN', {
                           day: 'numeric',
@@ -1057,8 +1702,43 @@ export default function AdminPage() {
                       </div>
                     );
                   })}
-                </div>
-              )}
+                  </div>
+                )}
+
+                {!ordersLoading && !ordersError && orders.length > 0 && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111111] border border-[#221D16] rounded-2xl px-4 py-3">
+                    <span className="text-[11px] text-[#888]">
+                      Showing{' '}
+                      <strong className="text-[#F6F1E8]">
+                        {ordersPage * ADMIN_ORDER_PAGE_SIZE + 1}-
+                        {Math.min((ordersPage + 1) * ADMIN_ORDER_PAGE_SIZE, ordersTotalElements)}
+                      </strong>{' '}
+                      of <strong className="text-[#F6F1E8]">{ordersTotalElements}</strong> orders
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => goToOrdersPage(ordersPage - 1)}
+                        disabled={ordersPage === 0 || ordersLoading}
+                        className="p-2 rounded-lg bg-[#181511] text-[#AAA39A] border border-[#28221A] hover:text-[#D9A441] hover:border-[#D9A441]/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        title="Previous page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="min-w-[92px] text-center text-[11px] font-semibold text-[#AAA39A]">
+                        Page {ordersPage + 1} of {Math.max(1, ordersTotalPages)}
+                      </span>
+                      <button
+                        onClick={() => goToOrdersPage(ordersPage + 1)}
+                        disabled={ordersPage + 1 >= ordersTotalPages || ordersLoading}
+                        className="p-2 rounded-lg bg-[#181511] text-[#AAA39A] border border-[#28221A] hover:text-[#D9A441] hover:border-[#D9A441]/50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        title="Next page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1161,58 +1841,148 @@ export default function AdminPage() {
           {/* TAB: OFFERS */}
           {activeTab === 'offers' && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <div>
                   <h2 className="font-serif-luxury text-2xl font-bold text-[#F6F1E8]">
                     Offer & Combo Creator
                   </h2>
                   <p className="text-xs text-[#888]">
-                    Manage real coupon codes and seasonal price discounts.
+                    Build product-aware coupons, combos, limits, and complimentary items.
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowAddOfferModal(true)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-black orange-gradient-btn flex items-center space-x-1.5"
+                  onClick={openCreateOfferModal}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-black orange-gradient-btn flex items-center justify-center space-x-1.5"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create Offer</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {offers.map((offer) => (
-                  <div
-                    key={offer.id}
-                    className="bg-[#111111] border border-[#221D16] p-6 rounded-2xl space-y-4 flex flex-col justify-between"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="font-mono text-xs font-bold text-[#D9A441] bg-[#181511] px-2.5 py-1 rounded-lg border border-[#28221A]">
-                          {offer.code}
-                        </span>
-                        <span className="text-[10px] text-emerald-400 uppercase font-bold">Active</span>
-                      </div>
-                      <h3 className="font-serif-luxury text-lg font-bold text-[#F6F1E8]">
-                        {offer.title}
-                      </h3>
-                      <p className="text-xs text-[#AAA39A]">{offer.description}</p>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {offers.map((offer) => {
+                  const now = Date.now();
+                  const starts = offer.startDate ? new Date(offer.startDate).getTime() : 0;
+                  const ends = offer.expiryDate ? new Date(offer.expiryDate).getTime() : Infinity;
+                  const isLive = offer.isActive !== false && starts <= now && ends >= now;
+                  const requiredItems = (offer.items || []).filter((item: any) => !item.isFree);
+                  const freeItems = (offer.items || []).filter((item: any) => item.isFree);
 
-                    <div className="pt-3 border-t border-[#1C1813] flex justify-between items-center">
-                      <span className="text-xs text-[#FF9F43] font-bold">
-                        {offer.discountType === 'PERCENTAGE'
-                          ? `${offer.discountValue}% OFF`
-                          : `₹${offer.discountValue} OFF`}
-                      </span>
-                      <button
-                        onClick={() => handleDeleteOffer(offer.id)}
-                        className="text-xs text-rose-400 hover:underline"
-                      >
-                        Delete
-                      </button>
+                  return (
+                    <div
+                      key={offer.id}
+                      className="bg-[#111111] border border-[#221D16] hover:border-[#D9A441]/30 transition-colors p-6 rounded-2xl space-y-4 flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-[#D9A441] bg-[#181511] px-2.5 py-1 rounded-lg border border-[#28221A]">
+                            {offer.code || 'NO CODE'}
+                          </span>
+                          <span
+                            className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+                              isLive
+                                ? 'text-emerald-300 bg-emerald-950/60 border-emerald-800'
+                                : 'text-rose-300 bg-rose-950/60 border-rose-800'
+                            }`}
+                          >
+                            {isLive ? 'Live' : offer.isActive === false ? 'Paused' : 'Scheduled/Expired'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 className="font-serif-luxury text-lg font-bold text-[#F6F1E8]">
+                            {offer.title}
+                          </h3>
+                          <p className="text-xs text-[#AAA39A] mt-1 line-clamp-2">{offer.description}</p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#FF9F43]/10 text-[#FF9F43] border border-[#FF9F43]/20">
+                            {offer.discountType === 'PERCENTAGE'
+                              ? `${offer.discountValue}% OFF`
+                              : offer.discountType === 'COMBO'
+                                ? `Combo · ₹${offer.discountValue} OFF`
+                                : `₹${offer.discountValue} OFF`}
+                          </span>
+                          {offer.minOrderAmount ? (
+                            <span className="text-[10px] px-2 py-1 rounded-full bg-[#181511] text-[#AAA39A] border border-[#28221A]">
+                              Min ₹{offer.minOrderAmount}
+                            </span>
+                          ) : null}
+                          {requiredItems.length > 0 && (
+                            <span className="text-[10px] px-2 py-1 rounded-full bg-[#181511] text-[#D9A441] border border-[#28221A]">
+                              {requiredItems.length} required item{requiredItems.length === 1 ? '' : 's'}
+                            </span>
+                          )}
+                          {freeItems.length > 0 && (
+                            <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-800">
+                              {freeItems.length} free gift{freeItems.length === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
+
+                        {requiredItems.length > 0 && (
+                          <div className="text-[11px] text-[#AAA39A] bg-[#16130F] border border-[#221D16] rounded-xl p-3 space-y-1">
+                            {requiredItems.slice(0, 4).map((item: any) => (
+                              <div key={item.id} className="flex justify-between gap-2">
+                                <span className="truncate">
+                                  {item.quantity}x {item.menuItem?.name || 'Menu item'}
+                                </span>
+                                <span className="text-[#D9A441] flex-shrink-0">required</span>
+                              </div>
+                            ))}
+                            {freeItems.slice(0, 3).map((item: any) => (
+                              <div key={`free-${item.id}`} className="flex justify-between gap-2 text-emerald-400">
+                                <span className="truncate">
+                                  {item.quantity}x {item.menuItem?.name || 'Menu item'}
+                                </span>
+                                <span className="flex-shrink-0">FREE</span>
+                              </div>
+                            ))}
+                            {offer.items.length > 7 && (
+                              <p className="text-[10px] text-[#777]">+{offer.items.length - 7} more items</p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px] text-[#777]">
+                          <span>Start: {formatOfferDate(offer.startDate)}</span>
+                          <span>End: {formatOfferDate(offer.expiryDate)}</span>
+                          <span>
+                            Used: {offer.timesUsed || 0}
+                            {offer.usageLimit ? ` / ${offer.usageLimit}` : ''}
+                          </span>
+                          <span>
+                            Per user: {offer.perUserLimit ? offer.perUserLimit : 'Unlimited'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-[#1C1813] flex justify-between items-center">
+                        <button
+                          onClick={() => openEditOfferModal(offer)}
+                          className="text-xs font-bold text-[#D9A441] hover:underline flex items-center space-x-1"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteOffer(offer.id)}
+                          className="text-xs text-rose-400 hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
+                  );
+                })}
+                {!loading && offers.length === 0 && (
+                  <div className="col-span-full bg-[#111111] border border-dashed border-[#2A241C] rounded-2xl p-10 text-center">
+                    <Tag className="w-8 h-8 text-[#D9A441] mx-auto mb-3" />
+                    <p className="text-sm font-bold text-[#F6F1E8]">No offers yet</p>
+                    <p className="text-xs text-[#777] mt-1">Create a coupon or combo to start driving orders.</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
@@ -1420,75 +2190,323 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL: CREATE OFFER */}
+      {/* MODAL: CREATE / EDIT OFFER */}
       {showAddOfferModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowAddOfferModal(false)} />
-          <div className="relative z-10 w-full max-w-lg bg-[#111111] border border-[#262018] rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl">
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => {
+              setShowAddOfferModal(false);
+              resetOfferForm();
+            }}
+          />
+          <div className="relative z-10 w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-[#111111] border border-[#262018] rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl">
             <div className="flex justify-between items-center pb-3 border-b border-[#201B14]">
-              <h3 className="font-serif-luxury text-xl font-bold text-[#F6F1E8]">Create Promotion / Combo</h3>
-              <button onClick={() => setShowAddOfferModal(false)} className="text-[#888] hover:text-[#FFF]">
+              <div>
+                <h3 className="font-serif-luxury text-xl font-bold text-[#F6F1E8]">
+                  {editingOfferId ? 'Edit Offer / Combo' : 'Create Offer / Combo'}
+                </h3>
+                <p className="text-[11px] text-[#777] mt-0.5">
+                  Select real menu items, set limits, and optionally attach complimentary gifts.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddOfferModal(false);
+                  resetOfferForm();
+                }}
+                className="text-[#888] hover:text-[#FFF]"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateOffer} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <label className="text-[#888] font-semibold uppercase">Offer Title</label>
-                <input
-                  type="text"
-                  required
-                  value={offerTitle}
-                  onChange={(e) => setOfferTitle(e.target.value)}
-                  placeholder="e.g. Festival Feast Discount"
-                  className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none"
-                />
-              </div>
+            <form onSubmit={handleSaveOffer} className="space-y-5 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[#888] font-semibold uppercase">Offer Banner</label>
+                    <div className="flex items-center gap-4">
+                      <div className="relative w-28 h-20 rounded-xl overflow-hidden bg-[#181511] border border-[#28221A] flex-shrink-0">
+                        {offerBannerPreview ? (
+                          <img src={offerBannerPreview} alt="Offer banner preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[#666]">
+                            <ImagePlus className="w-6 h-6" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <label className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-[#181511] border border-[#28221A] text-[#CCC] cursor-pointer hover:border-[#D9A441] hover:text-[#D9A441] transition-colors">
+                          <ImagePlus className="w-4 h-4" />
+                          <span>{offerBannerPreview ? 'Change banner' : 'Upload banner'}</span>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            className="hidden"
+                            onChange={handleOfferBannerChange}
+                          />
+                        </label>
+                        <p className="text-[10px] text-[#666]">JPG, PNG, WEBP or GIF. Max 5 MB.</p>
+                      </div>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[#888] font-semibold uppercase">Coupon Code</label>
-                  <input
-                    type="text"
-                    required
-                    value={offerCode}
-                    onChange={(e) => setOfferCode(e.target.value.toUpperCase())}
-                    placeholder="FEAST25"
-                    className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] uppercase outline-none"
-                  />
+                  <div className="space-y-1">
+                    <label className="text-[#888] font-semibold uppercase">Offer Title</label>
+                    <input
+                      type="text"
+                      required
+                      value={offerTitle}
+                      onChange={(e) => setOfferTitle(e.target.value)}
+                      placeholder="e.g. Festival Feast Discount"
+                      className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Coupon Code</label>
+                      <input
+                        type="text"
+                        value={offerCode}
+                        onChange={(e) => setOfferCode(e.target.value.toUpperCase())}
+                        placeholder="FEAST25"
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] uppercase outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Discount Type</label>
+                      <select
+                        value={offerDiscountType}
+                        onChange={(e) => setOfferDiscountType(e.target.value)}
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      >
+                        <option value="PERCENTAGE">Percentage off</option>
+                        <option value="FIXED_AMOUNT">Fixed amount off</option>
+                        <option value="COMBO">Combo / bundle deal</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">
+                        {offerDiscountType === 'PERCENTAGE' ? 'Discount (%)' : 'Discount (₹)'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        required
+                        value={offerDiscountValue}
+                        onChange={(e) => setOfferDiscountValue(e.target.value)}
+                        placeholder={offerDiscountType === 'PERCENTAGE' ? '20' : '150'}
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Min Order (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={offerMinOrder}
+                        onChange={(e) => setOfferMinOrder(e.target.value)}
+                        placeholder="499"
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Max Discount (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={offerMaxDiscount}
+                        onChange={(e) => setOfferMaxDiscount(e.target.value)}
+                        placeholder="Optional cap"
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Total Uses</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={offerUsageLimit}
+                        onChange={(e) => setOfferUsageLimit(e.target.value)}
+                        placeholder="Unlimited"
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Per Customer</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={offerPerUserLimit}
+                        onChange={(e) => setOfferPerUserLimit(e.target.value)}
+                        placeholder="Unlimited"
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Status</label>
+                      <select
+                        value={offerIsActive ? 'active' : 'paused'}
+                        onChange={(e) => setOfferIsActive(e.target.value === 'active')}
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      >
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Starts</label>
+                      <input
+                        type="datetime-local"
+                        required
+                        value={offerStartDate}
+                        onChange={(e) => setOfferStartDate(e.target.value)}
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[#888] font-semibold uppercase">Expires</label>
+                      <input
+                        type="datetime-local"
+                        required
+                        value={offerExpiryDate}
+                        onChange={(e) => setOfferExpiryDate(e.target.value)}
+                        className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none focus:border-[#D9A441]"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[#888] font-semibold uppercase">Discount (% or ₹)</label>
-                  <input
-                    type="number"
-                    required
-                    value={offerDiscountValue}
-                    onChange={(e) => setOfferDiscountValue(e.target.value)}
-                    placeholder="20"
-                    className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none"
-                  />
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[#888] font-semibold uppercase">Customer-facing Description</label>
+                    <textarea
+                      rows={3}
+                      value={offerDescription}
+                      onChange={(e) => setOfferDescription(e.target.value)}
+                      placeholder="Describe the deal, savings, and what makes it special..."
+                      className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none resize-none focus:border-[#D9A441]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[#888] font-semibold uppercase">Products in this Offer</label>
+                      <span className="text-[10px] text-[#D9A441]">{offerItems.length} selected</span>
+                    </div>
+                    <p className="text-[10px] text-[#666] leading-relaxed">
+                      Required items must be in the cart. Free gifts are added to the order automatically at ₹0.
+                    </p>
+
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {menuItems.map((dish) => {
+                        const selected = offerItems.find((item) => item.menuItemId === dish.id);
+                        return (
+                          <div
+                            key={dish.id}
+                            className={`rounded-xl border p-3 space-y-2 transition-colors ${
+                              selected
+                                ? 'bg-[#1A1711] border-[#D9A441]/50'
+                                : 'bg-[#15120E] border-[#221D16]'
+                            }`}
+                          >
+                            <label className="flex items-center justify-between gap-3 cursor-pointer">
+                              <span className="flex items-center space-x-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selected)}
+                                  onChange={() => toggleOfferItem(dish.id)}
+                                  className="rounded text-[#D9A441]"
+                                />
+                                <span className="truncate text-[#F6F1E8] font-medium">{dish.name}</span>
+                              </span>
+                              <span className="text-[#FF9F43] font-bold flex-shrink-0">
+                                ₹{dish.discountedPrice || dish.price}
+                              </span>
+                            </label>
+
+                            {selected && (
+                              <div className="grid grid-cols-2 gap-2 pl-6">
+                                <label className="space-y-1">
+                                  <span className="text-[10px] text-[#777] uppercase">Quantity</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={selected.quantity}
+                                    onChange={(e) =>
+                                      updateOfferItem(dish.id, {
+                                        quantity: Math.max(1, parseInt(e.target.value, 10) || 1),
+                                      })
+                                    }
+                                    className="w-full bg-[#111] border border-[#2A241D] rounded-lg px-2.5 py-1.5 text-[#F6F1E8] outline-none"
+                                  />
+                                </label>
+                                <label className="flex items-center space-x-2 pt-4 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.isFree}
+                                    onChange={(e) => updateOfferItem(dish.id, { isFree: e.target.checked })}
+                                    className="rounded text-emerald-500"
+                                  />
+                                  <span className="text-[10px] text-emerald-300 font-semibold uppercase">
+                                    Free gift
+                                  </span>
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {menuItems.length === 0 && (
+                        <p className="text-[11px] text-[#777] text-center py-6">
+                          Add menu items before attaching products to an offer.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[#888] font-semibold uppercase">Offer Description</label>
-                <input
-                  type="text"
-                  required
-                  value={offerDescription}
-                  onChange={(e) => setOfferDescription(e.target.value)}
-                  placeholder="Enjoy 20% off all main courses..."
-                  className="w-full bg-[#181511] border border-[#28221A] rounded-xl px-3.5 py-2 text-[#F6F1E8] outline-none"
-                />
+              <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-[#201B14]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddOfferModal(false);
+                    resetOfferForm();
+                  }}
+                  className="sm:flex-1 py-3 rounded-xl font-bold text-[#AAA39A] bg-[#181511] border border-[#28221A] hover:text-[#F6F1E8]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={offerSaving}
+                  className="sm:flex-[2] py-3 rounded-xl font-bold text-black uppercase tracking-wider orange-gradient-btn disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {offerSaving ? 'Saving...' : editingOfferId ? 'Save Changes' : 'Publish Offer'}
+                </button>
               </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl font-bold text-black uppercase tracking-wider orange-gradient-btn"
-              >
-                Publish Offer
-              </button>
             </form>
           </div>
         </div>
@@ -1573,6 +2591,9 @@ export default function AdminPage() {
                         )}
                         <div className="text-[10px] text-[#777]">
                           Price: ₹{it.unitPrice} each
+                          {it.isFreeItem && (
+                            <span className="ml-2 font-bold uppercase text-emerald-400">Free gift</span>
+                          )}
                         </div>
                       </div>
                       <div className="font-bold text-[#FF9F43] text-sm">
@@ -1801,6 +2822,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      </AdminGuard>
     </div>
   );
 }

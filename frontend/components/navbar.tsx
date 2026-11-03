@@ -4,26 +4,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCart } from '@/lib/cart-context';
-import { getSession, clearSession, UserSession } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { Flame, ShoppingBag, User, LogOut, Menu as MenuIcon, X, UtensilsCrossed, ChevronDown } from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { totalCount, setIsDrawerOpen, clearCart } = useCart();
-  const [session, setSessionState] = useState<UserSession | null>(null);
+  const { customerSession, adminSession, logoutCustomer, logoutAdmin } = useAuth();
+  const session = customerSession || adminSession;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Sync session state on mount and whenever auth state changes
-  useEffect(() => {
-    const syncSession = () => setSessionState(getSession());
-    syncSession();
-    window.addEventListener('ember_auth_change', syncSession);
-    return () => window.removeEventListener('ember_auth_change', syncSession);
-  }, []);
+  // Session is managed reactively by AuthProvider; no manual sync needed.
+  // The useAuth context already listens to cross-tab auth events.
 
   // Close user dropdown when clicking outside
   useEffect(() => {
@@ -54,8 +50,11 @@ export default function Navbar() {
 
   const handleLogout = () => {
     clearCart();
-    clearSession();
-    setSessionState(null);
+    if (session?.role === 'ROLE_ADMIN') {
+      logoutAdmin();
+    } else {
+      logoutCustomer();
+    }
     router.push('/');
   };
 

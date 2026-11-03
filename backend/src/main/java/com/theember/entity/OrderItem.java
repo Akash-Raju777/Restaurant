@@ -36,6 +36,9 @@ public class OrderItem {
     @Column(columnDefinition = "TEXT")
     private String customizationNotes;
 
+    @Column(name = "is_free_item")
+    private Boolean isFreeItem = false;
+
     public OrderItem() {}
 
     public Long getId() { return id; }
@@ -61,4 +64,7 @@ public class OrderItem {
 
     public String getCustomizationNotes() { return customizationNotes; }
     public void setCustomizationNotes(String customizationNotes) { this.customizationNotes = customizationNotes; }
+
+    public Boolean getIsFreeItem() { return isFreeItem; }
+    public void setIsFreeItem(Boolean isFreeItem) { this.isFreeItem = isFreeItem; }
 }

@@ -1,14 +1,29 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { setSession } from '@/lib/api';
+import { setCustomerSession, setAdminSession } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { Flame, Eye, EyeOff, Lock, Mail, User as UserIcon, Phone, ShieldCheck, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { customerSession, adminSession, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'customer' | 'admin'>('customer');
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isLoading) return;
+    if (adminSession && activeTab !== 'customer') {
+      router.push('/admin');
+      return;
+    }
+    if (customerSession && activeTab !== 'admin') {
+      router.push('/home');
+      return;
+    }
+  }, [customerSession, adminSession, isLoading, router, activeTab]);
   const [isRegistering, setIsRegistering] = useState(false);
 
   // Form States
@@ -57,7 +72,7 @@ export default function LoginPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Registration failed');
 
-        setSession(data);
+        setCustomerSession(data);
         router.push('/home');
       } else {
         // Login
@@ -74,11 +89,16 @@ export default function LoginPage() {
           throw new Error('Access denied. Administrator privileges required for Admin Portal.');
         }
 
-        setSession(data);
+        // Customer tab requires ROLE_CUSTOMER
+        if (activeTab === 'customer' && data.role !== 'ROLE_CUSTOMER') {
+          throw new Error('Access denied. Customer account required.');
+        }
 
         if (data.role === 'ROLE_ADMIN') {
+          setAdminSession(data);
           router.push('/admin');
         } else {
+          setCustomerSession(data);
           router.push('/home');
         }
       }

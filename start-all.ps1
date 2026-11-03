@@ -1,10 +1,10 @@
 # THE EMBER - Full Stack Launcher
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  THE EMBER — Launching Full-Stack Application           " -ForegroundColor Yellow
+Write-Host "  THE EMBER - Launching Full-Stack Application           " -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
-Start-Process powershell -ArgumentList "-NoExit", "-File", "$PSScriptRoot\start-backend.ps1"
-Start-Process powershell -ArgumentList "-NoExit", "-File", "$PSScriptRoot\start-frontend.ps1"
+Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "$PSScriptRoot\start-backend.ps1"
+Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "$PSScriptRoot\start-frontend.ps1"
 
 Write-Host "`nServers launched in background PowerShell windows:" -ForegroundColor Green
 Write-Host "  * Frontend UI:    http://localhost:3000" -ForegroundColor White
